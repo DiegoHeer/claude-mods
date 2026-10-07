@@ -68,7 +68,15 @@ export function planSections(files, cutsByPath) {
 
 const KINDS = { ' ': 'ctx', '+': 'add', '-': 'del' }
 
+// Each refresh brings new file objects, so rows are worked out once per diff.
+const rowsCache = new WeakMap()
+
 export function fileRows(file) {
+  if (!rowsCache.has(file)) rowsCache.set(file, numberRows(file))
+  return rowsCache.get(file)
+}
+
+function numberRows(file) {
   const rows = []
   for (const hunk of file.hunks) {
     let oldNo = hunk.oldStart
@@ -84,58 +92,63 @@ export function fileRows(file) {
   return rows
 }
 
-const numberKey = (side) => (side === 'new' ? 'newNo' : 'oldNo')
+// A row named by the number it keeps after a refresh: its new line, else its old one.
+const refOf = (row) => (row.newNo !== undefined ? { side: 'new', no: row.newNo } : { side: 'old', no: row.oldNo })
+const isRow = (ref) => (row) => row[ref.side === 'new' ? 'newNo' : 'oldNo'] === ref.no
 
-// Lines are named in the new file, unless the range holds only removed lines.
+const range = (numbers) => {
+  const [first, last] = [Math.min(...numbers), Math.max(...numbers)]
+  return first === last ? `L${first}` : `L${first}-${last}`
+}
+
+// Kept lines are named in the new file, removed ones in the old file.
 export function anchorOf(path, rows, from, to) {
   const picked = rows.slice(Math.min(from, to), Math.max(from, to) + 1)
-  const side = picked.some((row) => row.newNo !== undefined) ? 'new' : 'old'
-  const numbers = picked.map((row) => row[numberKey(side)]).filter((n) => n !== undefined)
-  const first = Math.min(...numbers)
-  const last = Math.max(...numbers)
-  const range = first === last ? `L${first}` : `L${first}-${last}`
+  const kept = picked.filter((row) => row.newNo !== undefined).map((row) => row.newNo)
+  const removed = picked.filter((row) => row.kind === 'del').map((row) => row.oldNo)
   return {
     path,
-    side,
-    first,
-    last,
-    label: side === 'new' ? range : `old ${range}`,
+    from: refOf(picked[0]),
+    to: refOf(picked.at(-1)),
+    label: [kept.length && range(kept), removed.length && 'old ' + range(removed)].filter(Boolean).join(', '),
     snippet: picked.map((row) => row.line).join('\n'),
   }
 }
 
-export function rowRange(rows, { side, first, last }) {
-  const key = numberKey(side)
-  const from = rows.findIndex((row) => row[key] === first)
-  const to = rows.findIndex((row) => row[key] === last)
+export function rowRange(rows, anchor) {
+  const from = rows.findIndex(isRow(anchor.from))
+  const to = rows.findIndex(isRow(anchor.to))
   return from === -1 || to === -1 ? null : { from, to }
 }
 
+export const PENDING_ID = 'pending' // the open comment box among the notes; drafts have numeric ids
+
 // Where a file's review shows: a mark per row, the rows a block must end after,
-// the notes (comment box, draft cards) under each such row, and notes whose lines are gone.
-export function placeReview(path, rows, { selection, pending, drafts }) {
+// and the row each note (draft card or comment box) goes under; a note whose lines are gone has none.
+export function placeReview(path, rows, { selection, notes }) {
   const marks = Array(rows.length).fill(' ')
   const cuts = new Set()
-  const notesAt = new Map()
-  const orphans = []
-  const mark = (from, to, sign) => marks.fill(sign, from, to + 1)
-  const place = (anchor, note, sign) => {
-    const range = rowRange(rows, anchor)
-    if (!range) return orphans.push(note)
-    if (sign) mark(range.from, range.to, sign)
-    cuts.add(range.to)
-    notesAt.set(range.to, [...(notesAt.get(range.to) ?? []), note])
+  const endRows = new Map()
+  for (const note of notes.filter((n) => n.path === path)) {
+    const found = rowRange(rows, note)
+    if (!found) continue
+    // While new lines are being picked, the open box keeps its place but not its bar.
+    const sign = note.id !== PENDING_ID ? '✎' : selection ? null : '▌'
+    if (sign) marks.fill(sign, found.from, found.to + 1)
+    cuts.add(found.to)
+    endRows.set(note.id, found.to)
   }
-  for (const draft of drafts.filter((d) => d.path === path)) place(draft, { type: 'draft', draft }, '✎')
-  // While new lines are being picked, the open box keeps its place but not its bar.
-  if (pending?.path === path) place(pending, { type: 'pending', anchor: pending }, selection ? null : '▌')
-  if (selection?.path === path) mark(selection.from, selection.to, '▌')
-  return { marks: marks.join(''), cuts, notesAt, orphans }
+  if (selection?.path === path) marks.fill('▌', selection.from, selection.to + 1)
+  return { marks: marks.join(''), cuts, endRows }
 }
 
+// Longer than any backtick run in the snippet, so its own fences cannot close this one.
+const fenceFor = (text) => '`'.repeat(Math.max(3, ...(text.match(/`+/g) ?? []).map((run) => run.length + 1)))
+
 export function reviewMessage(base, drafts) {
-  const items = drafts.map(
-    (draft, i) => `${i + 1}. ${draft.path} ${draft.label}\n\`\`\`diff\n${draft.snippet}\n\`\`\`\n${draft.text}`,
-  )
+  const items = drafts.map((draft, i) => {
+    const fence = fenceFor(draft.snippet)
+    return `${i + 1}. ${draft.path} ${draft.label}\n${fence}diff\n${draft.snippet}\n${fence}\n${draft.text}`
+  })
   return [`Review comments on this branch (vs ${base}). Please address each one.`, ...items].join('\n\n')
 }

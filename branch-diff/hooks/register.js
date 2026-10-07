@@ -20,6 +20,8 @@ let pendingRefresh = null
 const drafts = atom({ plugin: 'branch-diff', key: 'drafts' }, [])
 let selection = null // rows being picked: { path, anchorRow, from, to }
 let pending = null // the picked lines awaiting their comment, by line number
+let typedComment = '' // what the open comment box holds so far
+let isSending = false
 
 const rowsOf = (path) => {
   const file = diff.files?.find((f) => f.path === path)
@@ -40,6 +42,7 @@ function onGesture({ type, path, anchorRow, row, shift }) {
   // The open box stays until release: dropping it mid-gesture would re-cut the blocks
   // and unmount the one holding the pointer.
   if (type === 'release') {
+    forgetComment()
     pending = anchorOf(path, rows, anchor, row)
     selection = null
   } else {
@@ -47,24 +50,38 @@ function onGesture({ type, path, anchorRow, row, shift }) {
   }
 }
 
+function forgetComment() {
+  pending = null
+  typedComment = ''
+}
+
 async function saveComment($, text) {
+  const anchor = pending
+  // Forgotten before the await, so a box opened meanwhile is not closed by this save.
+  forgetComment()
   const comment = text.trim()
-  if (comment && pending) {
-    const anchor = pending
+  if (comment && anchor) {
     await update($, drafts, (list) => [...list, { ...anchor, id: Math.max(0, ...list.map((d) => d.id)) + 1, text: comment }])
   }
-  pending = null
   $.ui.invalidate('ui.render')
 }
 
 // Sent as the person's own words: the comments are theirs, not the plugin's.
+// Drafts leave only once sent, and only those sent; a half-typed comment goes along.
 async function sendReview($) {
-  const list = await read($, drafts)
-  if (list.length === 0) return
-  await update($, drafts, () => [])
-  pending = null
-  $.ui.invalidate('ui.render')
-  await $.prompt.submit({ text: reviewMessage(diff.base, list), asUser: true })
+  if (isSending) return
+  isSending = true
+  try {
+    await saveComment($, typedComment)
+    const list = await read($, drafts)
+    if (list.length === 0) return
+    await $.prompt.submit({ text: reviewMessage(diff.base, list), asUser: true })
+    const sent = new Set(list.map((d) => d.id))
+    await update($, drafts, (current) => current.filter((d) => !sent.has(d.id)))
+  } finally {
+    isSending = false
+    $.ui.invalidate('ui.render')
+  }
 }
 
 // Run git without ever throwing: a failed start or timeout becomes an exit code.
@@ -101,6 +118,8 @@ export function register(on) {
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
     isOpen = false
+    selection = null
+    forgetComment()
     return next(e)
   })
 
@@ -131,6 +150,9 @@ export function register(on) {
       },
       onRefresh: () => refresh($),
       onJump: (path) => $.ui.scroll({ in: PANE, to: { key: 'file-' + path }, block: 'start' }),
+      onTypeComment: (text) => {
+        typedComment = text
+      },
       onSaveComment: (text) => saveComment($, text),
       onCancelComment: () => saveComment($, ''),
       onDeleteDraft: async (id) => {

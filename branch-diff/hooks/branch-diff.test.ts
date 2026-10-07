@@ -259,7 +259,7 @@ test('selects a dragged range, held inside the block where the drag started', as
   await ui.pointer({ type: 'down', x: 3, y: 0, button: 'left', in: APP_BLOCK })
   await ui.pointer({ type: 'move', x: 3, y: 9, button: 'left', in: APP_BLOCK })
   await ui.pointer({ type: 'up', x: 3, y: 9, button: 'left', in: APP_BLOCK })
-  expect(await boxLabel(ui)).toBe('L1-2')
+  expect(await boxLabel(ui)).toBe('L1-2, old L2')
 })
 
 test('extends the open selection with a shift-click', async ($, on) => {
@@ -270,7 +270,7 @@ test('extends the open selection with a shift-click', async ($, on) => {
   expect(await boxLabel(ui)).toBe('L1')
   // The box sits under row 0, so rows 1-2 are now their own block.
   await click(ui, 'block-src/app.js-1', 1, true)
-  expect(await boxLabel(ui)).toBe('L1-2')
+  expect(await boxLabel(ui)).toBe('L1-2, old L2')
 })
 
 test('starts a new selection when a shift-click lands in another file', async ($, on) => {
@@ -364,6 +364,61 @@ test('lists drafts whose file left the diff, so they can still be seen and delet
   expect((await ui.find({ key: 'draft-1' }))?.text).toContain('src/app.js ✎ L2: revert this')
   await ui.press({ key: 'delete-1' })
   expect(await ui.find({ key: 'send' })).toBeUndefined()
+})
+
+test('turns the pane hotkeys off while a comment is typed', async ($, on) => {
+  fakeGit(on, BRANCH)
+  const ui = await openPane($)
+
+  await saveDraft(ui, 2, 'rename')
+  await click(ui, APP_BLOCK, 0)
+  for (const key of ['send', 'toggle', 'refresh']) expect((await ui.find({ key }))?.props.hotkey).toBeUndefined()
+
+  await ui.press({ key: 'cancel-comment' })
+  expect((await ui.find({ key: 'send' }))?.props.hotkey).toBe('s')
+})
+
+test('lists an open comment box whose lines are gone, so it can still be used', async ($, on) => {
+  const answers = { ...BRANCH }
+  fakeGit(on, answers)
+  const ui = await openPane($)
+
+  await click(ui, APP_BLOCK, 2)
+  answers[numstat('f0rk')] = '1\t0\tREADME.md\n'
+  answers[patch('f0rk', 1000000)] = README_PATCH + '\n'
+  await ui.press({ key: 'refresh' })
+
+  expect(await boxLabel(ui)).toBe('src/app.js L2')
+})
+
+test('keeps the drafts when sending fails', async ($, on) => {
+  fakeGit(on, BRANCH)
+  on('prompt.submit', async () => {
+    throw new Error('busy')
+  })
+  const ui = await openPane($)
+
+  await saveDraft(ui, 2, 'rename')
+  await ui.press({ key: 'send' }).catch(() => {})
+  expect(await ui.find({ key: 'draft-1' })).toBeDefined()
+})
+
+test('sends a half-typed comment along with the drafts', async ($, on) => {
+  fakeGit(on, BRANCH)
+  const submitted = []
+  on('prompt.submit', async ($, e) => {
+    submitted.push(e.text)
+    return { text: e.text }
+  })
+  const ui = await openPane($)
+
+  await saveDraft(ui, 2, 'rename')
+  await click(ui, APP_BLOCK, 0)
+  await ui.input({ key: 'comment-box', text: 'half typed', kind: 'change' })
+  await ui.press({ key: 'send' })
+
+  expect(submitted[0]).toContain('rename')
+  expect(submitted[0]).toContain('half typed')
 })
 
 test('offers no send button without drafts, nor where there is no mouse', async ($, on) => {

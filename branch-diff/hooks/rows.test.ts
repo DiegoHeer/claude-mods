@@ -22,7 +22,13 @@ test('labels a range in new-file lines, in either order', async () => {
 })
 
 test('labels removed lines alone in old-file lines', async () => {
-  expect(anchorOf(PATH, rows, 1, 1)).toMatchObject({ side: 'old', first: 11, last: 11, label: 'old L11' })
+  expect(anchorOf(PATH, rows, 1, 1).label).toBe('old L11')
+})
+
+test('names removed lines beside kept ones, and finds the picked rows again', async () => {
+  const anchor = anchorOf(PATH, rows, 0, 1)
+  expect(anchor.label).toBe('L10, old L11')
+  expect(rowRange(rows, anchor)).toEqual({ from: 0, to: 1 })
 })
 
 test('keeps the selected diff lines as the snippet', async () => {
@@ -32,7 +38,12 @@ test('keeps the selected diff lines as the snippet', async () => {
 test('finds an anchor again in the rows, or nothing when its lines are gone', async () => {
   const anchor = anchorOf(PATH, rows, 2, 4)
   expect(rowRange(rows, anchor)).toEqual({ from: 2, to: 4 })
-  expect(rowRange(rows, { ...anchor, first: 99 })).toBe(null)
+  expect(rowRange(rows, { ...anchor, to: { side: 'new', no: 99 } })).toBe(null)
+})
+
+test('fences a snippet past any backticks it holds', async () => {
+  const draft = { path: 'README.md', label: 'L3', snippet: '+```bash', text: 'why bash?' }
+  expect(reviewMessage('main', [draft])).toContain('````diff\n+```bash\n````\nwhy bash?')
 })
 
 test('writes all drafts as one review message', async () => {
