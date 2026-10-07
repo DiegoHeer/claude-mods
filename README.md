@@ -27,6 +27,12 @@ drawn like a pull request's "Files changed" view.
 - Press a file in the list to jump to it
 - Files with uncommitted changes carry a `● uncommitted` tag
 
+Review comments (terminal and desktop, needs the mouse):
+
+- Click a line to comment on it; drag or shift-click to pick several lines
+- Type the comment and press Enter to keep it as a draft (`✎` marks its lines)
+- `s` sends all drafts to Claude as one review message
+
 ## Develop
 
 ```

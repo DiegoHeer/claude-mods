@@ -1,57 +1,21 @@
 // Draws the pane: a header, a list of changed files, then every file's diff
 // stacked, each through the engine's own diff drawing (Code, format 'diff').
 
-const MAX_BLOCK_CHARS = 8000 // keeps each Code block well under the engine's per-drawing cap
-const MAX_DRAWN_CHARS = 80000 // keeps the whole pane under the engine's per-tree cap
-
-const countOld = (lines) => lines.filter((l) => l[0] !== '+').length
-const countNew = (lines) => lines.filter((l) => l[0] !== '-').length
-
-// The engine numbers lines from the header, so a cut hunk needs one rebuilt from its own lines.
-function hunkSource({ oldStart, newStart, lines }) {
-  return `@@ -${oldStart},${countOld(lines)} +${newStart},${countNew(lines)} @@\n` + lines.join('\n')
-}
-
-function splitHunk(hunk) {
-  const pieces = []
-  let piece = { oldStart: hunk.oldStart, newStart: hunk.newStart, lines: [] }
-  let size = 0
-  for (const fullLine of hunk.lines) {
-    const line = fullLine.slice(0, MAX_BLOCK_CHARS - 100)
-    if (size + line.length + 1 > MAX_BLOCK_CHARS && piece.lines.length) {
-      pieces.push(piece)
-      piece = { oldStart: piece.oldStart + countOld(piece.lines), newStart: piece.newStart + countNew(piece.lines), lines: [] }
-      size = 0
-    }
-    piece.lines.push(line)
-    size += line.length + 1
-  }
-  pieces.push(piece)
-  return pieces
-}
-
-// Which blocks of which files fit in the pane's budget, in order.
-function planSections(files) {
-  const sections = []
-  let budget = MAX_DRAWN_CHARS
-  for (const [i, file] of files.entries()) {
-    const section = { file, blocks: [], isCut: false }
-    sections.push(section)
-    for (const source of file.hunks.flatMap(splitHunk).map(hunkSource)) {
-      if (source.length > budget) {
-        section.isCut = true
-        return { sections, hiddenCount: files.length - i - 1 }
-      }
-      budget -= source.length
-      section.blocks.push(source)
-    }
-  }
-  return { sections, hiddenCount: 0 }
-}
+import { PENDING_ID, fileRows, placeReview, planSections } from './rows.js'
 
 const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's')
 
-export function drawPane({ Box, Text, Button, Code }, { diff, isWholeFile, columns, onToggle, onRefresh, onJump }) {
+export function drawPane(
+  { Box, Text, Button, Code, Client, Input },
+  { diff, isWholeFile, columns, review, onToggle, onRefresh, onJump, onTypeComment, onSaveComment, onCancelComment, onDeleteDraft, onSend },
+) {
+  // Review comments need the mouse, so they exist only where the surface has a Client.
+  const hasReview = Boolean(Client && review)
+  const drafts = hasReview ? review.drafts : []
+  const notes = hasReview && review.pending ? [...drafts, { ...review.pending, id: PENDING_ID }] : drafts
+  // While a comment is typed, its letters must reach the box, not the pane's hotkeys.
+  const hotkey = (key) => (hasReview && review.pending ? {} : { hotkey: key })
+
   const column = (...children) => Box({ flexDirection: 'column', children })
   const blank = () => Text({ children: [' '] })
   const dim = (text) => Text({ dimColor: true, children: [text] })
@@ -69,13 +33,38 @@ export function drawPane({ Box, Text, Button, Code }, { diff, isWholeFile, colum
     children: [
       Text({ bold: true, children: ['branch-diff'] }),
       dim(summary),
-      Button({ key: 'toggle', label: isWholeFile ? 'changes only' : 'whole files', hotkey: 'f', plain: true, onPress: onToggle }),
-      Button({ key: 'refresh', label: 'refresh', hotkey: 'r', plain: true, onPress: onRefresh }),
+      Button({ key: 'toggle', label: isWholeFile ? 'changes only' : 'whole files', ...hotkey('f'), plain: true, onPress: onToggle }),
+      Button({ key: 'refresh', label: 'refresh', ...hotkey('r'), plain: true, onPress: onRefresh }),
+      ...(drafts.length ? [Button({ key: 'send', label: 'send ' + plural(drafts.length, 'comment'), ...hotkey('s'), plain: true, onPress: onSend })] : []),
     ],
   })
 
-  if (diff.error) return column(header, blank(), Text({ color: 'error', children: [diff.error] }))
-  if (diff.files.length === 0) return column(header, blank(), Text({ children: ['No changes vs ' + diff.base] }))
+  // The comment box is keyed so it, and what is typed in it, survives blocks shifting around it on a refresh.
+  const drawNote = (note, where = '') =>
+    note.id === PENDING_ID
+      ? Box({
+          key: 'comment-row',
+          flexDirection: 'row',
+          columnGap: 2,
+          children: [
+            Input({ key: 'comment-box', label: where + note.label, placeholder: 'comment', submitLabel: 'save', autoFocus: true, onInput: onTypeComment, onSubmit: onSaveComment }),
+            Button({ key: 'cancel-comment', label: 'cancel', plain: true, onPress: onCancelComment }),
+          ],
+        })
+      : Box({
+          key: 'draft-' + note.id,
+          flexDirection: 'row',
+          columnGap: 2,
+          children: [
+            Text({ color: 'warning', children: [`${where}✎ ${note.label}: ${note.text}`] }),
+            Button({ key: 'delete-' + note.id, label: 'delete', plain: true, onPress: () => onDeleteDraft(note.id) }),
+          ],
+        })
+  // A note with no place in the drawn diff (its lines gone, its file binary or not shown) is listed by file instead.
+  const notesNotShown = (shownIds) => notes.filter((n) => !shownIds.has(n.id)).map((n) => drawNote(n, n.path + ' '))
+
+  if (diff.error) return column(header, ...notesNotShown(new Set()), blank(), Text({ color: 'error', children: [diff.error] }))
+  if (diff.files.length === 0) return column(header, ...notesNotShown(new Set()), blank(), Text({ children: ['No changes vs ' + diff.base] }))
 
   const fileList = diff.files.map((file) =>
     Box({
@@ -85,10 +74,29 @@ export function drawPane({ Box, Text, Button, Code }, { diff, isWholeFile, colum
     }),
   )
 
+  const reviewedPaths = new Set([...notes.map((n) => n.path), hasReview ? review.selection?.path : undefined])
+  const placements = new Map(
+    diff.files
+      .filter((file) => !file.isBinary && reviewedPaths.has(file.path))
+      .map((file) => [file.path, placeReview(file.path, fileRows(file), { selection: review.selection, notes })]),
+  )
+  const cutsByPath = new Map([...placements].map(([path, placement]) => [path, placement.cuts]))
+  const { sections, hiddenCount } = planSections(diff.files, cutsByPath)
+
+  const lastRowOf = (block) => block.start + block.count - 1
+  const notesUnder = (path, row) => notes.filter((n) => n.path === path && placements.get(path)?.endRows.get(n.id) === row)
+  const shownIds = new Set(sections.flatMap(({ file, blocks }) => blocks.flatMap((b) => notesUnder(file.path, lastRowOf(b)).map((n) => n.id))))
+
+  // Where the surface has a Client, the block hears the mouse; elsewhere it is the plain diff.
+  const drawBlock = (path, block) => {
+    if (!Client) return [Code({ source: block.source, format: 'diff', path })]
+    const marks = placements.get(path)?.marks.slice(block.start, lastRowOf(block) + 1) ?? ' '.repeat(block.count)
+    const props = { path, source: block.source, start: block.start, count: block.count, marks }
+    return [Client({ key: `block-${path}-${block.start}`, module: './diff-block.js', props }), ...notesUnder(path, lastRowOf(block)).map((n) => drawNote(n))]
+  }
+
   const drawSection = ({ file, blocks, isCut }) => {
-    const body = file.isBinary
-      ? [dim('Binary file, not shown')]
-      : blocks.map((source) => Code({ source, format: 'diff', path: file.path }))
+    const body = file.isBinary ? [dim('Binary file, not shown')] : blocks.flatMap((block) => drawBlock(file.path, block))
     if (!file.isBinary && file.hunks.length === 0) body.push(dim('No text changes'))
     if (isCut) body.push(dim('… rest of this file not shown'))
     return Box({
@@ -98,10 +106,9 @@ export function drawPane({ Box, Text, Button, Code }, { diff, isWholeFile, colum
     })
   }
 
-  const { sections, hiddenCount } = planSections(diff.files)
   const footer = hiddenCount
     ? [dim(plural(hiddenCount, 'more file') + ' not shown' + (isWholeFile ? ' — press f for changed parts only' : ''))]
     : []
 
-  return column(header, ...fileList, blank(), ...sections.map(drawSection), fileRule(), ...footer)
+  return column(header, ...fileList, ...notesNotShown(shownIds), blank(), ...sections.map(drawSection), fileRule(), ...footer)
 }
