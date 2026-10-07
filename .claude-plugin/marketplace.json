@@ -1,0 +1,14 @@
+{
+  "name": "claude-mods",
+  "description": "Diego Heer's Claude Code mods",
+  "owner": {
+    "name": "Diego Heer"
+  },
+  "plugins": [
+    {
+      "name": "branch-diff",
+      "source": "./branch-diff",
+      "description": "A /branch-diff pane with every file changed on this branch vs its base, GitHub-style"
+    }
+  ]
+}
