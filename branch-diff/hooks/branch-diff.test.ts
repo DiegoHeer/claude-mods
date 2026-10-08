@@ -6,6 +6,10 @@ const PANE_PROPS = { title: 'Branch diff', bodyColumns: 80 } as never
 const DIFF = 'git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames'
 const numstat = (forkPoint: string) => `${DIFF} --numstat ${forkPoint}`
 const patch = (forkPoint: string, context: number) => `${DIFF} -U${context} ${forkPoint}`
+const verify = (ref: string) => `git rev-parse --verify --quiet ${ref}^{commit}`
+const UNTRACKED = 'git ls-files -z --others --exclude-standard --full-name :/'
+const untrackedPatch = (path: string, context = 1000000) =>
+  `git -C /repo -c core.bigFileThreshold=1m ${DIFF.slice(4)} --no-index -U${context} -- /dev/null ${path}`
 
 // Fake git: answers each command the mod runs from a table of argv → stdout.
 // The table is read on every call, so a test can change it between refreshes.
@@ -59,6 +63,7 @@ const README_PATCH = [
 
 const BRANCH = {
   'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+  [verify('origin/main')]: 'abc\n',
   'git merge-base origin/main HEAD': 'f0rk\n',
   [numstat('f0rk')]: '1\t1\tsrc/app.js\n1\t0\tREADME.md\n',
   [patch('f0rk', 1000000)]: APP_PATCH + '\n' + README_PATCH + '\n',
@@ -163,6 +168,17 @@ test('marks a binary file instead of drawing it', async ($, on) => {
   expect(await ui.find({ text: 'Binary file, not shown' })).toBeDefined()
 })
 
+test('draws a file whose name holds a space', async ($, on) => {
+  fakeGit(on, {
+    ...BRANCH,
+    [numstat('f0rk')]: '1\t0\tmy notes.md\n',
+    [patch('f0rk', 1000000)]: 'diff --git a/my notes.md b/my notes.md\n--- a/my notes.md\t\n+++ b/my notes.md\t\n@@ -0,0 +1 @@\n+hi\n',
+  })
+  const ui = await openPane($)
+
+  expect((await codeBlocks(ui))[0]?.text).toBe('@@ -0,0 +1,1 @@\n+hi')
+})
+
 test('refreshes shortly after Claude edits a file while the pane is open', async ($, on) => {
   const clock = mock.clock(on)
   const answers = { ...BRANCH }
@@ -190,6 +206,7 @@ test('does not run git on edits while the pane is closed', async ($, on) => {
 test('shows uncommitted changes on the base branch itself', async ($, on) => {
   fakeGit(on, {
     'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+    [verify('origin/main')]: 'abc\n',
     'git merge-base origin/main HEAD': 'head\n',
     [numstat('head')]: '1\t1\tapp.json\n',
     [patch('head', 1000000)]: 'diff --git a/app.json b/app.json\n--- a/app.json\n+++ b/app.json\n@@ -1 +1 @@\n-  "v": 1\n+  "v": 2\n',
@@ -201,13 +218,148 @@ test('shows uncommitted changes on the base branch itself', async ($, on) => {
 
 test('falls back to main and says when nothing changed', async ($, on) => {
   fakeGit(on, {
-    'git rev-parse --verify --quiet main': 'abc\n',
+    [verify('main')]: 'abc\n',
     'git merge-base main HEAD': 'abc\n',
     [numstat('abc')]: '',
   })
   const ui = await openPane($)
 
   expect(await ui.find({ text: 'No changes vs main' })).toBeDefined()
+})
+
+test('prefers origin/main over a local main when origin/HEAD is not set', async ($, on) => {
+  fakeGit(on, {
+    [verify('origin/main')]: 'abc\n',
+    [verify('main')]: 'head\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs origin/main' })).toBeDefined()
+})
+
+test('skips an origin/HEAD that names a branch which is gone', async ($, on) => {
+  fakeGit(on, {
+    'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/master\n',
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs origin/main' })).toBeDefined()
+})
+
+test('checks a gone origin/HEAD branch only once', async ($, on) => {
+  const calls = fakeGit(on, {
+    'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+    [verify('origin/master')]: 'abc\n',
+    'git merge-base origin/master HEAD': 'abc\n',
+    [numstat('abc')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs origin/master' })).toBeDefined()
+  expect(calls.filter((call) => call === verify('origin/main'))).toHaveLength(1)
+})
+
+test('uses the base set in git config before any other', async ($, on) => {
+  fakeGit(on, {
+    'git config --get branch-diff.base': 'develop\n',
+    [verify('develop')]: 'dev\n',
+    'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base develop HEAD': 'dev\n',
+    [numstat('dev')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs develop' })).toBeDefined()
+})
+
+test('says when the base set in git config does not exist', async ($, on) => {
+  fakeGit(on, { 'git config --get branch-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: /branch-diff.base is set to nope/ })).toBeDefined()
+})
+
+test('shows untracked files as new, with their whole content', async ($, on) => {
+  fakeGit(on, {
+    ...BRANCH,
+    [UNTRACKED]: 'notes.md\0',
+    'git rev-parse --show-toplevel': '/repo\n',
+    [untrackedPatch('notes.md')]:
+      'diff --git a/notes.md b/notes.md\nnew file mode 100644\n--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1,2 @@\n+one\n+two\n',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'vs origin/main · 3 files' })).toBeDefined()
+  expect(await ui.find({ key: 'goto-notes.md' })).toBeDefined()
+  expect(await ui.findAll({ type: 'Text', text: '● new, untracked' })).toHaveLength(2)
+  expect((await codeBlocks(ui)).at(-1)?.text).toBe('@@ -0,0 +1,2 @@\n+one\n+two')
+})
+
+test('shows untracked files even when nothing tracked changed', async ($, on) => {
+  fakeGit(on, {
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+    [UNTRACKED]: 'new file.txt\0',
+    'git rev-parse --show-toplevel': '/repo\n',
+    [untrackedPatch('new file.txt')]: 'diff --git a/new file.txt b/new file.txt\n--- /dev/null\n+++ b/new file.txt\t\n@@ -0,0 +1 @@\n+hi\n',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'vs origin/main · 1 file' })).toBeDefined()
+  expect((await codeBlocks(ui))[0]?.text).toBe('@@ -0,0 +1,1 @@\n+hi')
+})
+
+test('lists at most 50 untracked files and counts the rest', async ($, on) => {
+  const paths = Array.from({ length: 53 }, (_, i) => `f${i}.txt`)
+  const calls = fakeGit(on, {
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+    [UNTRACKED]: paths.join('\0') + '\0',
+    'git rev-parse --show-toplevel': '/repo\n',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'vs origin/main · 50 files' })).toBeDefined()
+  expect(await ui.find({ text: '3 more untracked files not shown' })).toBeDefined()
+  expect(calls).not.toContain(untrackedPatch('f50.txt'))
+})
+
+test('leaves out a nested repo among the untracked files', async ($, on) => {
+  const calls = fakeGit(on, {
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+    [UNTRACKED]: 'vendor/lib/\0notes.md\0',
+    'git rev-parse --show-toplevel': '/repo\n',
+    [untrackedPatch('notes.md')]: 'diff --git a/notes.md b/notes.md\n--- /dev/null\n+++ b/notes.md\n@@ -0,0 +1 @@\n+hi\n',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'vs origin/main · 1 file' })).toBeDefined()
+  expect(calls).not.toContain(untrackedPatch('vendor/lib/'))
+})
+
+test('draws an untracked file whose name git quotes', async ($, on) => {
+  fakeGit(on, {
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+    [UNTRACKED]: 'say "hi".txt\0',
+    'git rev-parse --show-toplevel': '/repo\n',
+    [untrackedPatch('say "hi".txt')]: 'diff --git "a/say \\"hi\\".txt" "b/say \\"hi\\".txt"\n--- /dev/null\n+++ "b/say \\"hi\\".txt"\n@@ -0,0 +1 @@\n+hi\n',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: '+1' })).toBeDefined()
+  expect((await codeBlocks(ui))[0]?.text).toBe('@@ -0,0 +1,1 @@\n+hi')
 })
 
 test('shows an error outside a repo with no base branch', async ($, on) => {
