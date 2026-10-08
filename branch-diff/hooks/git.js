@@ -43,9 +43,10 @@ function parseHunks(stdout) {
     if (line.startsWith('diff --git ')) {
       hunks = null
     } else if (line.startsWith('--- ')) {
-      oldPath = line.slice(6)
+      oldPath = line.slice(6).replace(/\t$/, '')
     } else if (line.startsWith('+++ ')) {
-      const path = line === '+++ /dev/null' ? oldPath : line.slice(6)
+      // git ends the name with a tab when it holds a space.
+      const path = (line === '+++ /dev/null' ? oldPath : line.slice(6)).replace(/\t$/, '')
       hunks = []
       byPath.set(path, hunks)
     } else if (hunks && line.startsWith('@@ -')) {

@@ -163,6 +163,17 @@ test('marks a binary file instead of drawing it', async ($, on) => {
   expect(await ui.find({ text: 'Binary file, not shown' })).toBeDefined()
 })
 
+test('draws a file whose name holds a space', async ($, on) => {
+  fakeGit(on, {
+    ...BRANCH,
+    [numstat('f0rk')]: '1\t0\tmy notes.md\n',
+    [patch('f0rk', 1000000)]: 'diff --git a/my notes.md b/my notes.md\n--- a/my notes.md\t\n+++ b/my notes.md\t\n@@ -0,0 +1 @@\n+hi\n',
+  })
+  const ui = await openPane($)
+
+  expect((await codeBlocks(ui))[0]?.text).toBe('@@ -0,0 +1,1 @@\n+hi')
+})
+
 test('refreshes shortly after Claude edits a file while the pane is open', async ($, on) => {
   const clock = mock.clock(on)
   const answers = { ...BRANCH }
