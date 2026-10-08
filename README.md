@@ -19,7 +19,8 @@ Update later with `/plugin marketplace update claude-mods`.
 ### branch-diff
 
 `/branch-diff` opens a pane with every file changed on this branch compared to its base,
-committed and uncommitted work included, drawn like a pull request's "Files changed" view.
+committed, uncommitted and untracked work included, drawn like a pull request's
+"Files changed" view.
 
 The base is `git config branch-diff.base` if set, else `origin/HEAD`, else the first of
 `origin/main`, `origin/master`, `main`, `master` that exists. To pin it for a repo:
@@ -29,6 +30,8 @@ The base is `git config branch-diff.base` if set, else `origin/HEAD`, else the f
 - `r` refreshes; the pane also refreshes on its own after Claude edits files or runs commands
 - Press a file in the list to jump to it
 - Files with uncommitted changes carry a `● uncommitted` tag
+- Untracked files (not ignored) show in full with a `● new, untracked` tag, up to 50 of them
+  (files over 1 MB are listed as binary, not drawn)
 
 Review comments (terminal and desktop, needs the mouse):
 

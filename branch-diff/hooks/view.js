@@ -20,10 +20,11 @@ export function drawPane(
   const blank = () => Text({ children: [' '] })
   const dim = (text) => Text({ dimColor: true, children: [text] })
   const fileRule = () => Text({ bold: true, wrap: 'truncate-end', children: ['━'.repeat(columns || 40)] })
+  const tag = (file) => (file.isUntracked ? 'new, untracked' : file.isUncommitted ? 'uncommitted' : null)
   const stat = (file) => [
     Text({ color: 'diffAddedWord', children: ['+' + file.added] }),
     Text({ color: 'diffRemovedWord', children: ['-' + file.removed] }),
-    ...(file.isUncommitted ? [Text({ color: 'warning', children: ['● uncommitted'] })] : []),
+    ...(tag(file) ? [Text({ color: 'warning', children: ['● ' + tag(file)] })] : []),
   ]
 
   const summary = 'vs ' + (diff.base ?? '?') + (diff.files ? ' · ' + plural(diff.files.length, 'file') : '')
@@ -74,6 +75,10 @@ export function drawPane(
     }),
   )
 
+  const untrackedNote = diff.untrackedHiddenCount
+    ? [dim(plural(diff.untrackedHiddenCount, 'more untracked file') + ' not shown')]
+    : []
+
   const reviewedPaths = new Set([...notes.map((n) => n.path), hasReview ? review.selection?.path : undefined])
   const placements = new Map(
     diff.files
@@ -110,5 +115,5 @@ export function drawPane(
     ? [dim(plural(hiddenCount, 'more file') + ' not shown' + (isWholeFile ? ' — press f for changed parts only' : ''))]
     : []
 
-  return column(header, ...fileList, ...notesNotShown(shownIds), blank(), ...sections.map(drawSection), fileRule(), ...footer)
+  return column(header, ...fileList, ...untrackedNote, ...notesNotShown(shownIds), blank(), ...sections.map(drawSection), fileRule(), ...footer)
 }

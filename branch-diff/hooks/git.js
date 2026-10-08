@@ -4,6 +4,8 @@
 
 export const WHOLE_FILE = 1000000
 export const CHANGED_PARTS = 3
+export const UNTRACKED_LIMIT = 50
+const UNTRACKED_MAX_SIZE = '1m' // past this, git calls an untracked file binary instead of printing it
 
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames']
 
@@ -77,6 +79,45 @@ async function listUncommitted(git) {
   return new Set(r.exitCode === 0 ? r.stdout.split('\n').filter(Boolean) : [])
 }
 
+// Files git does not track yet and does not ignore, each diffed against nothing,
+// up to UNTRACKED_LIMIT of them. Paths are from the top of the repo, like `git diff`'s.
+async function loadUntracked(git, contextLines) {
+  const [listed, top] = await Promise.all([
+    git(['ls-files', '-z', '--others', '--exclude-standard', '--full-name', ':/']),
+    git(['rev-parse', '--show-toplevel']),
+  ])
+  // A nested repo is listed as its folder, ending in '/', and has no text to show.
+  const paths = listed.exitCode === 0 ? listed.stdout.split('\0').filter((path) => path && !path.endsWith('/')) : []
+  const topDir = top.stdout?.trim()
+  if (paths.length === 0 || !topDir) return { files: [], hiddenCount: 0 }
+  const shown = paths.slice(0, UNTRACKED_LIMIT)
+  const files = await Promise.all(shown.map((path) => loadUntrackedFile(git, topDir, path, contextLines)))
+  return { files, hiddenCount: paths.length - shown.length }
+}
+
+async function loadUntrackedFile(git, topDir, path, contextLines) {
+  // --no-index exits 1 when the sides differ, which they always do here.
+  const r = await git(['-C', topDir, '-c', 'core.bigFileThreshold=' + UNTRACKED_MAX_SIZE, ...DIFF, '--no-index', '-U' + contextLines, '--', '/dev/null', path])
+  const isBinary = /^Binary files /m.test(r.stdout ?? '')
+  // The diff holds only this file, and its header can quote the name, so it is not looked up by name.
+  const [hunks = []] = isBinary ? [] : parseHunks(r.stdout ?? '').values()
+  const added = hunks.reduce((n, h) => n + h.lines.filter((l) => l[0] === '+').length, 0)
+  return { path, added, removed: 0, isBinary, hunks, isUntracked: true }
+}
+
+// Fills in each changed file's hunks and uncommitted tag, or returns git's error.
+async function addHunks(git, files, forkPoint, contextLines) {
+  if (files.length === 0) return null
+  const [patch, uncommitted] = await Promise.all([git([...DIFF, '-U' + contextLines, forkPoint]), listUncommitted(git)])
+  if (patch.exitCode !== 0) return patch.stderr.trim() || 'git diff failed'
+  const hunksByPath = parseHunks(patch.stdout)
+  for (const file of files) {
+    file.hunks = hunksByPath.get(file.path) ?? []
+    file.isUncommitted = uncommitted.has(file.path)
+  }
+  return null
+}
+
 // Everything the pane shows, or an error to show instead.
 export async function loadBranchDiff(git, contextLines) {
   const { base, error } = await detectBase(git)
@@ -87,15 +128,7 @@ export async function loadBranchDiff(git, contextLines) {
   const stat = await git([...DIFF, '--numstat', forkPoint])
   if (stat.exitCode !== 0) return { base, error: stat.stderr.trim() || 'git diff failed' }
   const files = parseNumstat(stat.stdout)
-  if (files.length === 0) return { base, files }
-
-  const patch = await git([...DIFF, '-U' + contextLines, forkPoint])
-  if (patch.exitCode !== 0) return { base, error: patch.stderr.trim() || 'git diff failed' }
-  const hunksByPath = parseHunks(patch.stdout)
-  const uncommitted = await listUncommitted(git)
-  for (const file of files) {
-    file.hunks = hunksByPath.get(file.path) ?? []
-    file.isUncommitted = uncommitted.has(file.path)
-  }
-  return { base, files }
+  const [hunksError, untracked] = await Promise.all([addHunks(git, files, forkPoint, contextLines), loadUntracked(git, contextLines)])
+  if (hunksError) return { base, error: hunksError }
+  return { base, files: [...files, ...untracked.files], untrackedHiddenCount: untracked.hiddenCount }
 }
