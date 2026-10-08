@@ -7,15 +7,22 @@ export const CHANGED_PARTS = 3
 
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames']
 
-// The branch this one forked from: the remote's default, else main, else master.
+const exists = async (git, ref) => (await git(['rev-parse', '--verify', '--quiet', ref + '^{commit}'])).exitCode === 0
+
+// The branch this one forked from: `git config branch-diff.base` if set, else the
+// remote's default, else origin/main, origin/master, main, master. Remote branches
+// come first: a local main is often behind, or is the very branch being worked on.
 async function detectBase(git) {
+  const configured = (await git(['config', '--get', 'branch-diff.base'])).stdout?.trim()
+  if (configured) return (await exists(git, configured)) ? { base: configured } : { error: 'branch-diff.base is set to ' + configured + ', which does not exist.' }
   const remote = await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
-  if (remote.exitCode === 0 && remote.stdout.trim()) return remote.stdout.trim()
-  for (const name of ['main', 'master']) {
-    const found = await git(['rev-parse', '--verify', '--quiet', name])
-    if (found.exitCode === 0) return name
+  const remoteHead = remote.exitCode === 0 ? remote.stdout.trim() : ''
+  // origin/HEAD is never updated by a fetch, so it can name a branch that is gone.
+  const candidates = new Set([remoteHead, 'origin/main', 'origin/master', 'main', 'master'].filter(Boolean))
+  for (const name of candidates) {
+    if (await exists(git, name)) return { base: name }
   }
-  return null
+  return { error: 'No base branch found (looked for origin/HEAD, origin/main, origin/master, main, master). Set one with `git config branch-diff.base <branch>`.' }
 }
 
 async function findForkPoint(git, base) {
@@ -72,8 +79,8 @@ async function listUncommitted(git) {
 
 // Everything the pane shows, or an error to show instead.
 export async function loadBranchDiff(git, contextLines) {
-  const base = await detectBase(git)
-  if (!base) return { error: 'No base branch found (looked for origin/HEAD, main, master).' }
+  const { base, error } = await detectBase(git)
+  if (!base) return { error }
   const forkPoint = await findForkPoint(git, base)
   if (!forkPoint) return { base, error: 'This branch shares no history with ' + base + '.' }
 

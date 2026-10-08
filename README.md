@@ -18,9 +18,12 @@ Update later with `/plugin marketplace update claude-mods`.
 
 ### branch-diff
 
-`/branch-diff` opens a pane with every file changed on this branch compared to its base
-(`origin/HEAD`, else `main`, else `master`), committed and uncommitted work included,
-drawn like a pull request's "Files changed" view.
+`/branch-diff` opens a pane with every file changed on this branch compared to its base,
+committed and uncommitted work included, drawn like a pull request's "Files changed" view.
+
+The base is `git config branch-diff.base` if set, else `origin/HEAD`, else the first of
+`origin/main`, `origin/master`, `main`, `master` that exists. To pin it for a repo:
+`git config branch-diff.base develop`.
 
 - `f` switches between whole files and changed parts only
 - `r` refreshes; the pane also refreshes on its own after Claude edits files or runs commands

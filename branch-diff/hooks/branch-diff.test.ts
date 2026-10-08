@@ -6,6 +6,7 @@ const PANE_PROPS = { title: 'Branch diff', bodyColumns: 80 } as never
 const DIFF = 'git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames'
 const numstat = (forkPoint: string) => `${DIFF} --numstat ${forkPoint}`
 const patch = (forkPoint: string, context: number) => `${DIFF} -U${context} ${forkPoint}`
+const verify = (ref: string) => `git rev-parse --verify --quiet ${ref}^{commit}`
 
 // Fake git: answers each command the mod runs from a table of argv → stdout.
 // The table is read on every call, so a test can change it between refreshes.
@@ -59,6 +60,7 @@ const README_PATCH = [
 
 const BRANCH = {
   'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+  [verify('origin/main')]: 'abc\n',
   'git merge-base origin/main HEAD': 'f0rk\n',
   [numstat('f0rk')]: '1\t1\tsrc/app.js\n1\t0\tREADME.md\n',
   [patch('f0rk', 1000000)]: APP_PATCH + '\n' + README_PATCH + '\n',
@@ -201,6 +203,7 @@ test('does not run git on edits while the pane is closed', async ($, on) => {
 test('shows uncommitted changes on the base branch itself', async ($, on) => {
   fakeGit(on, {
     'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+    [verify('origin/main')]: 'abc\n',
     'git merge-base origin/main HEAD': 'head\n',
     [numstat('head')]: '1\t1\tapp.json\n',
     [patch('head', 1000000)]: 'diff --git a/app.json b/app.json\n--- a/app.json\n+++ b/app.json\n@@ -1 +1 @@\n-  "v": 1\n+  "v": 2\n',
@@ -212,13 +215,71 @@ test('shows uncommitted changes on the base branch itself', async ($, on) => {
 
 test('falls back to main and says when nothing changed', async ($, on) => {
   fakeGit(on, {
-    'git rev-parse --verify --quiet main': 'abc\n',
+    [verify('main')]: 'abc\n',
     'git merge-base main HEAD': 'abc\n',
     [numstat('abc')]: '',
   })
   const ui = await openPane($)
 
   expect(await ui.find({ text: 'No changes vs main' })).toBeDefined()
+})
+
+test('prefers origin/main over a local main when origin/HEAD is not set', async ($, on) => {
+  fakeGit(on, {
+    [verify('origin/main')]: 'abc\n',
+    [verify('main')]: 'head\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs origin/main' })).toBeDefined()
+})
+
+test('skips an origin/HEAD that names a branch which is gone', async ($, on) => {
+  fakeGit(on, {
+    'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/master\n',
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base origin/main HEAD': 'abc\n',
+    [numstat('abc')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs origin/main' })).toBeDefined()
+})
+
+test('checks a gone origin/HEAD branch only once', async ($, on) => {
+  const calls = fakeGit(on, {
+    'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+    [verify('origin/master')]: 'abc\n',
+    'git merge-base origin/master HEAD': 'abc\n',
+    [numstat('abc')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs origin/master' })).toBeDefined()
+  expect(calls.filter((call) => call === verify('origin/main'))).toHaveLength(1)
+})
+
+test('uses the base set in git config before any other', async ($, on) => {
+  fakeGit(on, {
+    'git config --get branch-diff.base': 'develop\n',
+    [verify('develop')]: 'dev\n',
+    'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
+    [verify('origin/main')]: 'abc\n',
+    'git merge-base develop HEAD': 'dev\n',
+    [numstat('dev')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs develop' })).toBeDefined()
+})
+
+test('says when the base set in git config does not exist', async ($, on) => {
+  fakeGit(on, { 'git config --get branch-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: /branch-diff.base is set to nope/ })).toBeDefined()
 })
 
 test('shows an error outside a repo with no base branch', async ($, on) => {
