@@ -9,14 +9,14 @@ In a Claude Code session:
 
 ```
 /plugin marketplace add DiegoHeer/claude-mods
-/plugin install branch-diff@claude-mods
+/plugin install review-diff@claude-mods
 ```
 
 Update later with `/plugin marketplace update claude-mods`.
 
 ## Mods
 
-### branch-diff
+### review-diff
 
 `/review-diff` opens a pane with every file changed on this branch compared to its base,
 committed, uncommitted and untracked work included, drawn like a pull request's
@@ -49,7 +49,7 @@ Review comments (terminal and desktop, needs the mouse):
 ## Develop
 
 ```
-claude plugin validate ./branch-diff
-claude plugin test ./branch-diff
-claude --plugin-dir ./branch-diff
+claude plugin validate ./review-diff
+claude plugin test ./review-diff
+claude --plugin-dir ./review-diff
 ```

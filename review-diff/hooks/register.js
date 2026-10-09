@@ -25,7 +25,7 @@ let pickedPath = null // the worktree picked in the pane; null follows Claude
 let touchedPaths = [] // the files and worktrees Claude last worked in, newest first
 let isPickerOpen = false
 
-const drafts = atom({ plugin: 'branch-diff', key: 'drafts' }, [])
+const drafts = atom({ plugin: 'review-diff', key: 'drafts' }, [])
 let selection = null // rows being picked: { path, anchorRow, from, to }
 let pending = null // the picked lines awaiting their comment, by line number
 let typedComment = '' // what the open comment box holds so far

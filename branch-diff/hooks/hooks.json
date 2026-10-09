@@ -1,4 +1,0 @@
-{
-  "description": "branch-diff hooks",
-  "modules": ["./register.js"]
-}
