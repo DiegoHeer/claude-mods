@@ -22,9 +22,9 @@ Update later with `/plugin marketplace update claude-mods`.
 committed, uncommitted and untracked work included, drawn like a pull request's
 "Files changed" view.
 
-The base is `git config branch-diff.base` if set, else `origin/HEAD`, else the first of
+The base is `git config review-diff.base` if set, else `origin/HEAD`, else the first of
 `origin/main`, `origin/master`, `main`, `master` that exists. To pin it for a repo:
-`git config branch-diff.base develop`.
+`git config review-diff.base develop`.
 
 Worktrees: the pane follows the worktree Claude last worked in (the one it entered
 with `EnterWorktree`, or the one holding the last file it edited), else the session's.

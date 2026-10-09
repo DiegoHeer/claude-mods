@@ -272,7 +272,7 @@ test('checks a gone origin/HEAD branch only once', async ($, on) => {
 
 test('uses the base set in git config before any other', async ($, on) => {
   fakeGit(on, {
-    'git config --get branch-diff.base': 'develop\n',
+    'git config --get review-diff.base': 'develop\n',
     [verify('develop')]: 'dev\n',
     'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
     [verify('origin/main')]: 'abc\n',
@@ -285,10 +285,22 @@ test('uses the base set in git config before any other', async ($, on) => {
 })
 
 test('says when the base set in git config does not exist', async ($, on) => {
-  fakeGit(on, { 'git config --get branch-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
+  fakeGit(on, { 'git config --get review-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
   const ui = await openPane($)
 
-  expect(await ui.find({ text: /branch-diff.base is set to nope/ })).toBeDefined()
+  expect(await ui.find({ text: /review-diff.base is set to nope/ })).toBeDefined()
+})
+
+test('still reads the base from its name before the rename', async ($, on) => {
+  fakeGit(on, {
+    'git config --get branch-diff.base': 'develop\n',
+    [verify('develop')]: 'dev\n',
+    'git merge-base develop HEAD': 'dev\n',
+    [numstat('dev')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs develop' })).toBeDefined()
 })
 
 test('shows untracked files as new, with their whole content', async ($, on) => {

@@ -9,14 +9,23 @@ const UNTRACKED_MAX_SIZE = '1m' // past this, git calls an untracked file binary
 
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames']
 
+const BASE_KEYS = ['review-diff.base', 'branch-diff.base'] // the second is the name from before the rename
+
 const exists = async (git, ref) => (await git(['rev-parse', '--verify', '--quiet', ref + '^{commit}'])).exitCode === 0
 
-// The branch this one forked from: `git config branch-diff.base` if set, else the
+async function configuredBase(git) {
+  for (const key of BASE_KEYS) {
+    const base = (await git(['config', '--get', key])).stdout?.trim()
+    if (base) return { key, base }
+  }
+}
+
+// The branch this one forked from: `git config review-diff.base` if set, else the
 // remote's default, else origin/main, origin/master, main, master. Remote branches
 // come first: a local main is often behind, or is the very branch being worked on.
 async function detectBase(git) {
-  const configured = (await git(['config', '--get', 'branch-diff.base'])).stdout?.trim()
-  if (configured) return (await exists(git, configured)) ? { base: configured } : { error: 'branch-diff.base is set to ' + configured + ', which does not exist.' }
+  const configured = await configuredBase(git)
+  if (configured) return (await exists(git, configured.base)) ? { base: configured.base } : { error: configured.key + ' is set to ' + configured.base + ', which does not exist.' }
   const remote = await git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
   const remoteHead = remote.exitCode === 0 ? remote.stdout.trim() : ''
   // origin/HEAD is never updated by a fetch, so it can name a branch that is gone.
@@ -24,7 +33,7 @@ async function detectBase(git) {
   for (const name of candidates) {
     if (await exists(git, name)) return { base: name }
   }
-  return { error: 'No base branch found (looked for origin/HEAD, origin/main, origin/master, main, master). Set one with `git config branch-diff.base <branch>`.' }
+  return { error: 'No base branch found (looked for origin/HEAD, origin/main, origin/master, main, master). Set one with `git config review-diff.base <branch>`.' }
 }
 
 async function findForkPoint(git, base) {
