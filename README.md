@@ -9,22 +9,25 @@ In a Claude Code session:
 
 ```
 /plugin marketplace add DiegoHeer/claude-mods
-/plugin install branch-diff@claude-mods
+/plugin install review-diff@claude-mods
 ```
 
 Update later with `/plugin marketplace update claude-mods`.
 
+Upgrading from `branch-diff`: it was renamed, so the update won't carry it over. Run
+`/plugin uninstall branch-diff@claude-mods`, then `/plugin install review-diff@claude-mods`.
+
 ## Mods
 
-### branch-diff
+### review-diff
 
-`/branch-diff` opens a pane with every file changed on this branch compared to its base,
+`/review-diff` opens a pane with every file changed on this branch compared to its base,
 committed, uncommitted and untracked work included, drawn like a pull request's
 "Files changed" view.
 
-The base is `git config branch-diff.base` if set, else `origin/HEAD`, else the first of
+The base is `git config review-diff.base` if set, else `origin/HEAD`, else the first of
 `origin/main`, `origin/master`, `main`, `master` that exists. To pin it for a repo:
-`git config branch-diff.base develop`.
+`git config review-diff.base develop`.
 
 Worktrees: the pane follows the worktree Claude last worked in (the one it entered
 with `EnterWorktree`, or the one holding the last file it edited), else the session's.
@@ -49,7 +52,7 @@ Review comments (terminal and desktop, needs the mouse):
 ## Develop
 
 ```
-claude plugin validate ./branch-diff
-claude plugin test ./branch-diff
-claude --plugin-dir ./branch-diff
+claude plugin validate ./review-diff
+claude plugin test ./review-diff
+claude --plugin-dir ./review-diff
 ```

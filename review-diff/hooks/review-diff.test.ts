@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-const PLUGIN = 'branch-diff'
-const PANE_PROPS = { title: 'Branch diff', bodyColumns: 80 } as never
+const PLUGIN = 'review-diff'
+const PANE = 'review-diff'
+const PANE_PROPS = { title: 'Review diff', bodyColumns: 80 } as never
 
 const DIFF = 'git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames'
 const numstat = (forkPoint: string) => `${DIFF} --numstat ${forkPoint}`
@@ -32,8 +33,8 @@ function fakeGit(on, answers: Record<string, string>, holdUntil?: (key: string) 
 }
 
 async function openPane($, surface: 'terminal' | 'desktop' | 'vscode' = 'terminal') {
-  await $.command.run({ command: 'branch-diff', args: '' })
-  return $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PLUGIN })
+  await $.command.run({ command: 'review-diff', args: '' })
+  return $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 }
 
 // The diff blocks in drawing order, whether drawn inside mouse-aware Clients or directly.
@@ -78,8 +79,8 @@ const BRANCH = {
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`stacks every changed file as a built-in diff block (${surface})`, async ($, on) => {
     fakeGit(on, BRANCH)
-    await $.command.run({ command: 'branch-diff', args: '' })
-    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PLUGIN })
+    await $.command.run({ command: 'review-diff', args: '' })
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 
     expect(await ui.find({ text: 'vs origin/main · 2 files' })).toBeDefined()
     expect(await ui.find({ key: 'goto-src/app.js', text: 'src/app.js' })).toBeDefined()
@@ -271,7 +272,7 @@ test('checks a gone origin/HEAD branch only once', async ($, on) => {
 
 test('uses the base set in git config before any other', async ($, on) => {
   fakeGit(on, {
-    'git config --get branch-diff.base': 'develop\n',
+    'git config --get review-diff.base': 'develop\n',
     [verify('develop')]: 'dev\n',
     'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
     [verify('origin/main')]: 'abc\n',
@@ -284,10 +285,22 @@ test('uses the base set in git config before any other', async ($, on) => {
 })
 
 test('says when the base set in git config does not exist', async ($, on) => {
-  fakeGit(on, { 'git config --get branch-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
+  fakeGit(on, { 'git config --get review-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
   const ui = await openPane($)
 
-  expect(await ui.find({ text: /branch-diff.base is set to nope/ })).toBeDefined()
+  expect(await ui.find({ text: /review-diff.base is set to nope/ })).toBeDefined()
+})
+
+test('still reads the base from its name before the rename', async ($, on) => {
+  fakeGit(on, {
+    'git config --get branch-diff.base': 'develop\n',
+    [verify('develop')]: 'dev\n',
+    'git merge-base develop HEAD': 'dev\n',
+    [numstat('dev')]: '',
+  })
+  const ui = await openPane($)
+
+  expect(await ui.find({ text: 'No changes vs develop' })).toBeDefined()
 })
 
 test('shows untracked files as new, with their whole content', async ($, on) => {
@@ -584,7 +597,7 @@ test('offers no send button without drafts, nor where there is no mouse', async 
   expect(await ui.find({ key: 'send' })).toBeUndefined()
 
   await saveDraft(ui, 2, 'rename')
-  const plain = await $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'Pane', props: PANE_PROPS, requestId: PLUGIN })
+  const plain = await $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'Pane', props: PANE_PROPS, requestId: PANE })
   expect(await plain.find({ key: 'send' })).toBeUndefined()
 })
 

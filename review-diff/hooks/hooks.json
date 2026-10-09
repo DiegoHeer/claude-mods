@@ -1,0 +1,4 @@
+{
+  "description": "review-diff hooks",
+  "modules": ["./register.js"]
+}

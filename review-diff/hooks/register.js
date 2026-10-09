@@ -1,4 +1,4 @@
-// /branch-diff: a pane with every file changed on this branch vs its base,
+// /review-diff: a pane with every file changed on this branch vs its base,
 // stacked like a pull request's files, refreshed as Claude edits. Lines picked
 // with the mouse take review comments, kept as drafts until sent to Claude.
 
@@ -7,7 +7,7 @@ import { CHANGED_PARTS, WHOLE_FILE, findWorktree, listWorktrees, loadBranchDiff 
 import { anchorOf, fileRows, reviewMessage, rowRange } from './rows.js'
 import { drawPane } from './view.js'
 
-const PANE = 'branch-diff'
+const PANE = 'review-diff'
 const REFRESH_DELAY_MS = 300 // lets a burst of edits settle into one refresh
 const EDITING_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'Bash', 'EnterWorktree', 'ExitWorktree']
 const MOUSE_SURFACES = ['terminal', 'desktop'] // the surfaces that draw a Client
@@ -25,7 +25,7 @@ let pickedPath = null // the worktree picked in the pane; null follows Claude
 let touchedPaths = [] // the files and worktrees Claude last worked in, newest first
 let isPickerOpen = false
 
-const drafts = atom({ plugin: 'branch-diff', key: 'drafts' }, [])
+const drafts = atom({ plugin: 'review-diff', key: 'drafts' }, [])
 let selection = null // rows being picked: { path, anchorRow, from, to }
 let pending = null // the picked lines awaiting their comment, by line number
 let typedComment = '' // what the open comment box holds so far
@@ -154,14 +154,14 @@ function refreshSoon($) {
 
 export function register(on) {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'branch-diff', description: 'Show the full branch diff in a pane' })
+    await $.command.register({ name: 'review-diff', description: 'Show the full branch diff in a pane' })
     return next(e)
   })
 
-  on('command.run', { command: 'branch-diff' }, async ($) => {
+  on('command.run', { command: 'review-diff' }, async ($) => {
     await refresh($)
     isOpen = true
-    await $.ui.open({ id: PANE, title: 'Branch diff', focus: true, closeOnEscape: true })
+    await $.ui.open({ id: PANE, title: 'Review diff', focus: true, closeOnEscape: true })
     return {}
   })
 
