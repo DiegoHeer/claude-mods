@@ -14,6 +14,9 @@ In a Claude Code session:
 
 Update later with `/plugin marketplace update claude-mods`.
 
+Upgrading from `branch-diff`: it was renamed, so the update won't carry it over. Run
+`/plugin uninstall branch-diff@claude-mods`, then `/plugin install review-diff@claude-mods`.
+
 ## Mods
 
 ### review-diff
