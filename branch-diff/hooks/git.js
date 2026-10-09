@@ -118,6 +118,40 @@ async function addHunks(git, files, forkPoint, contextLines) {
   return null
 }
 
+// Every worktree of the repo, each `{ path, branch }`; branch is undefined on a detached HEAD.
+// Null when git fails, which says nothing about which worktrees exist.
+export async function listWorktrees(git) {
+  const r = await git(['worktree', 'list', '--porcelain'])
+  if (r.exitCode !== 0) return null
+  return r.stdout.split('\n\n').map(parseWorktree).filter((w) => w.path && !w.isBare && !w.isPrunable)
+}
+
+function parseWorktree(block) {
+  const fields = new Map(block.split('\n').filter(Boolean).map((line) => [line.split(' ', 1)[0], line.slice(line.indexOf(' ') + 1)]))
+  return {
+    path: fields.get('worktree'),
+    branch: fields.get('branch')?.replace(/^refs\/heads\//, ''),
+    isBare: fields.has('bare'),
+    isPrunable: fields.has('prunable'), // its folder is gone
+  }
+}
+
+// The deepest worktree holding the path, since worktrees can sit inside the main one.
+function worktreeHolding(worktrees, path) {
+  const slashed = path.replaceAll('\\', '/')
+  const holders = worktrees.filter((w) => slashed === w.path || slashed.startsWith(w.path + '/'))
+  return holders.sort((a, b) => b.path.length - a.path.length)[0]
+}
+
+// The worktree holding a path, by its name, else as git resolves its folder
+// (reached through a symlink, or spelled some other way).
+export async function findWorktree(git, worktrees, path, folder = path.replace(/[\\/][^\\/]*$/, '')) {
+  const named = worktreeHolding(worktrees, path)
+  if (named || worktrees.length === 0 || !folder) return named
+  const r = await git(['-C', folder, 'rev-parse', '--show-toplevel'])
+  return r.exitCode === 0 ? worktrees.find((w) => w.path === r.stdout.trim()) : undefined
+}
+
 // Everything the pane shows, or an error to show instead.
 export async function loadBranchDiff(git, contextLines) {
   const { base, error } = await detectBase(git)

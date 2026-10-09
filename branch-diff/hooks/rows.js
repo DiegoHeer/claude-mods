@@ -145,10 +145,11 @@ export function placeReview(path, rows, { selection, notes }) {
 // Longer than any backtick run in the snippet, so its own fences cannot close this one.
 const fenceFor = (text) => '`'.repeat(Math.max(3, ...(text.match(/`+/g) ?? []).map((run) => run.length + 1)))
 
-export function reviewMessage(base, drafts) {
+export function reviewMessage(base, drafts, worktree) {
   const items = drafts.map((draft, i) => {
     const fence = fenceFor(draft.snippet)
     return `${i + 1}. ${draft.path} ${draft.label}\n${fence}diff\n${draft.snippet}\n${fence}\n${draft.text}`
   })
-  return [`Review comments on this branch (vs ${base}). Please address each one.`, ...items].join('\n\n')
+  const where = worktree ? `, in the worktree at ${worktree}` : ''
+  return [`Review comments on this branch (vs ${base})${where}. Please address each one.`, ...items].join('\n\n')
 }
