@@ -3,13 +3,13 @@
 // with the mouse take review comments, kept as drafts until sent to Claude.
 
 import { atom, read, update } from 'claude-code'
-import { CHANGED_PARTS, WHOLE_FILE, loadBranchDiff } from './git.js'
+import { CHANGED_PARTS, WHOLE_FILE, listWorktrees, loadBranchDiff, worktreeHolding } from './git.js'
 import { anchorOf, fileRows, reviewMessage, rowRange } from './rows.js'
 import { drawPane } from './view.js'
 
 const PANE = 'branch-diff'
 const REFRESH_DELAY_MS = 300 // lets a burst of edits settle into one refresh
-const EDITING_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'Bash']
+const EDITING_TOOLS = ['Edit', 'Write', 'NotebookEdit', 'Bash', 'EnterWorktree']
 const MOUSE_SURFACES = ['terminal', 'desktop'] // the surfaces that draw a Client
 
 let isWholeFile = true
@@ -17,11 +17,21 @@ let diff = { files: [] }
 let isOpen = false
 let pendingRefresh = null
 
+let worktrees = []
+let target // the worktree shown; undefined when git lists none
+let pickedPath = null // the worktree picked in the pane; null follows Claude
+let touchedPath = null // the last file or worktree Claude worked in
+let isPickerOpen = false
+
 const drafts = atom({ plugin: 'branch-diff', key: 'drafts' }, [])
 let selection = null // rows being picked: { path, anchorRow, from, to }
 let pending = null // the picked lines awaiting their comment, by line number
 let typedComment = '' // what the open comment box holds so far
 let isSending = false
+
+// A draft shows, and is sent, only in the worktree it was written in.
+const isHere = (draft) => draft.worktree === target?.path
+const readHereDrafts = async ($) => (await read($, drafts)).filter(isHere)
 
 const rowsOf = (path) => {
   const file = diff.files?.find((f) => f.path === path)
@@ -61,7 +71,7 @@ async function saveComment($, text) {
   forgetComment()
   const comment = text.trim()
   if (comment && anchor) {
-    await update($, drafts, (list) => [...list, { ...anchor, id: Math.max(0, ...list.map((d) => d.id)) + 1, text: comment }])
+    await update($, drafts, (list) => [...list, { ...anchor, worktree: target?.path, id: Math.max(0, ...list.map((d) => d.id)) + 1, text: comment }])
   }
   $.ui.invalidate('ui.render')
 }
@@ -73,9 +83,9 @@ async function sendReview($) {
   isSending = true
   try {
     await saveComment($, typedComment)
-    const list = await read($, drafts)
+    const list = await readHereDrafts($)
     if (list.length === 0) return
-    await $.prompt.submit({ text: reviewMessage(diff.base, list), asUser: true })
+    await $.prompt.submit({ text: reviewMessage(diff.base, list, target?.path), asUser: true })
     const sent = new Set(list.map((d) => d.id))
     await update($, drafts, (current) => current.filter((d) => !sent.has(d.id)))
   } finally {
@@ -85,16 +95,35 @@ async function sendReview($) {
 }
 
 // Run git without ever throwing: a failed start or timeout becomes an exit code.
-async function runGit($, args) {
+async function runGit($, args, cwd) {
   try {
-    return await $.process.run(['git', ...args])
+    return await $.process.run(['git', ...args], cwd ? { cwd } : undefined)
   } catch (e) {
     return { exitCode: 1, stdout: '', stderr: String(e) }
   }
 }
 
+// The picked worktree, else the one Claude last worked in, else the session's.
+function chooseTarget(sessionDir) {
+  const picked = worktrees.find((w) => w.path === pickedPath)
+  const followed = touchedPath ? worktreeHolding(worktrees, touchedPath) : undefined
+  return picked ?? followed ?? worktreeHolding(worktrees, sessionDir)
+}
+
+// Where a tool call worked: the worktree EnterWorktree moved to, or the file an edit wrote.
+const touchedBy = (e, result) => (e.tool === 'EnterWorktree' ? result.result?.worktreePath : (e.file_path ?? e.notebook_path))
+
 async function refresh($) {
-  diff = await loadBranchDiff((args) => runGit($, args), isWholeFile ? WHOLE_FILE : CHANGED_PARTS)
+  worktrees = await listWorktrees((args) => runGit($, args))
+  if (!worktrees.some((w) => w.path === pickedPath)) pickedPath = null
+  const shown = chooseTarget(await $.session.cwd())
+  // Picked lines name files of the worktree they were picked in.
+  if (shown?.path !== target?.path) {
+    selection = null
+    forgetComment()
+  }
+  target = shown
+  diff = await loadBranchDiff((args) => runGit($, args, target?.path), isWholeFile ? WHOLE_FILE : CHANGED_PARTS)
   $.ui.invalidate('ui.render')
 }
 
@@ -118,6 +147,7 @@ export function register(on) {
 
   on('ui.close', { id: PANE }, async ($, e, next) => {
     isOpen = false
+    isPickerOpen = false
     selection = null
     forgetComment()
     return next(e)
@@ -125,6 +155,7 @@ export function register(on) {
 
   on('tool.call', { tool: EDITING_TOOLS }, async ($, e, next) => {
     const result = await next(e)
+    touchedPath = touchedBy(e, result) ?? touchedPath
     if (isOpen) refreshSoon($)
     return result
   })
@@ -143,12 +174,25 @@ export function register(on) {
       diff,
       isWholeFile,
       columns: e.props.bodyColumns,
-      review: { selection, pending, drafts: await read($, drafts) },
+      review: { selection, pending, drafts: await readHereDrafts($) },
+      worktrees,
+      target,
+      isFollowing: pickedPath === null,
+      isPickerOpen,
       onToggle: () => {
         isWholeFile = !isWholeFile
         return refresh($)
       },
       onRefresh: () => refresh($),
+      onTogglePicker: () => {
+        isPickerOpen = !isPickerOpen
+        $.ui.invalidate('ui.render')
+      },
+      onPickWorktree: (path) => {
+        pickedPath = path
+        isPickerOpen = false
+        return refresh($)
+      },
       onJump: (path) => $.ui.scroll({ in: PANE, to: { key: 'file-' + path }, block: 'start' }),
       onTypeComment: (text) => {
         typedComment = text

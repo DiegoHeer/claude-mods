@@ -26,8 +26,15 @@ The base is `git config branch-diff.base` if set, else `origin/HEAD`, else the f
 `origin/main`, `origin/master`, `main`, `master` that exists. To pin it for a repo:
 `git config branch-diff.base develop`.
 
+Worktrees: the pane follows the worktree Claude last worked in (the one it entered
+with `EnterWorktree`, or the one holding the last file it edited), else the session's.
+When the repo has more than one worktree, a `worktree` picker in the header pins the
+pane to any of them; pick `follow Claude` to go back to following. Review comments stay
+with the worktree they were written in.
+
 - `f` switches between whole files and changed parts only
 - `r` refreshes; the pane also refreshes on its own after Claude edits files or runs commands
+- `w` steps to the next worktree, then back to `follow Claude` (shown with two or more worktrees)
 - Press a file in the list to jump to it
 - Files with uncommitted changes carry a `● uncommitted` tag
 - Untracked files (not ignored) show in full with a `● new, untracked` tag, up to 50 of them

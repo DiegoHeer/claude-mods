@@ -10,6 +10,7 @@ export type Draft = {
   label: string
   snippet: string
   text: string
+  worktree?: string // the worktree's folder; absent when git listed none
 }
 
 declare module 'claude-code' {

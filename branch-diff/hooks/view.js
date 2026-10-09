@@ -5,9 +5,31 @@ import { PENDING_ID, fileRows, placeReview, planSections } from './rows.js'
 
 const plural = (n, word) => n + ' ' + word + (n === 1 ? '' : 's')
 
+const FOLLOW = 'follow' // the picker option for following Claude
+const nameOf = (worktree) => worktree.branch ?? worktree.path.split('/').at(-1) + ' (detached)'
+
 export function drawPane(
   { Box, Text, Button, Code, Client, Input },
-  { diff, isWholeFile, columns, review, onToggle, onRefresh, onJump, onTypeComment, onSaveComment, onCancelComment, onDeleteDraft, onSend },
+  {
+    diff,
+    isWholeFile,
+    columns,
+    review,
+    worktrees,
+    target,
+    isFollowing,
+    isPickerOpen,
+    onToggle,
+    onRefresh,
+    onTogglePicker,
+    onPickWorktree,
+    onJump,
+    onTypeComment,
+    onSaveComment,
+    onCancelComment,
+    onDeleteDraft,
+    onSend,
+  },
 ) {
   // Review comments need the mouse, so they exist only where the surface has a Client.
   const hasReview = Boolean(Client && review)
@@ -27,8 +49,32 @@ export function drawPane(
     ...(tag(file) ? [Text({ color: 'warning', children: ['● ' + tag(file)] })] : []),
   ]
 
+  // Built from Buttons, not a Select: the terminal's Select takes no mouse picks.
+  const followLabel = 'follow Claude' + (isFollowing && target ? ` (${nameOf(target)})` : '')
+  const pick = (value) => onPickWorktree(value === FOLLOW ? null : value)
+  const option = (value, label) => Button({ key: 'worktree-' + value, label, plain: true, onPress: () => pick(value) })
+  const drawPicker = () => [
+    Button({
+      key: 'worktree',
+      label: `worktree: ${isFollowing ? followLabel : nameOf(target)} ${isPickerOpen ? '▴' : '▾'}`,
+      plain: true,
+      onPress: onTogglePicker,
+    }),
+    ...(isPickerOpen
+      ? [Box({ flexDirection: 'column', paddingLeft: 2, children: [option(FOLLOW, followLabel), ...worktrees.map((w) => option(w.path, nameOf(w)))] })]
+      : []),
+  ]
+  const choices = [FOLLOW, ...(worktrees ?? []).map((w) => w.path)]
+  const nextChoice = () => choices[(choices.indexOf(isFollowing ? FOLLOW : target?.path) + 1) % choices.length]
+  // With one worktree there is nothing to pick.
+  const hasPicker = worktrees?.length > 1
+  const picker = hasPicker ? drawPicker() : []
+  const nextButton = hasPicker
+    ? [Button({ key: 'next-worktree', label: 'next worktree', ...hotkey('w'), plain: true, onPress: () => pick(nextChoice()) })]
+    : []
+
   const summary = 'vs ' + (diff.base ?? '?') + (diff.files ? ' · ' + plural(diff.files.length, 'file') : '')
-  const header = Box({
+  const toolbar = Box({
     flexDirection: 'row',
     columnGap: 2,
     children: [
@@ -36,9 +82,11 @@ export function drawPane(
       dim(summary),
       Button({ key: 'toggle', label: isWholeFile ? 'changes only' : 'whole files', ...hotkey('f'), plain: true, onPress: onToggle }),
       Button({ key: 'refresh', label: 'refresh', ...hotkey('r'), plain: true, onPress: onRefresh }),
+      ...nextButton,
       ...(drafts.length ? [Button({ key: 'send', label: 'send ' + plural(drafts.length, 'comment'), ...hotkey('s'), plain: true, onPress: onSend })] : []),
     ],
   })
+  const header = column(toolbar, ...picker)
 
   // The comment box is keyed so it, and what is typed in it, survives blocks shifting around it on a refresh.
   const drawNote = (note, where = '') =>

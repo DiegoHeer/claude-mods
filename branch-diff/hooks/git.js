@@ -118,6 +118,24 @@ async function addHunks(git, files, forkPoint, contextLines) {
   return null
 }
 
+// Every worktree of the repo, each `{ path, branch }`; branch is undefined on a detached HEAD.
+export async function listWorktrees(git) {
+  const r = await git(['worktree', 'list', '--porcelain'])
+  if (r.exitCode !== 0) return []
+  return r.stdout.split('\n\n').map(parseWorktree).filter((w) => w.path && !w.isBare)
+}
+
+function parseWorktree(block) {
+  const fields = new Map(block.split('\n').filter(Boolean).map((line) => [line.split(' ', 1)[0], line.slice(line.indexOf(' ') + 1)]))
+  return { path: fields.get('worktree'), branch: fields.get('branch')?.replace(/^refs\/heads\//, ''), isBare: fields.has('bare') }
+}
+
+// The deepest worktree holding the path, since worktrees can sit inside the main one.
+export function worktreeHolding(worktrees, path) {
+  const holders = worktrees.filter((w) => path === w.path || path.startsWith(w.path + '/'))
+  return holders.sort((a, b) => b.path.length - a.path.length)[0]
+}
+
 // Everything the pane shows, or an error to show instead.
 export async function loadBranchDiff(git, contextLines) {
   const { base, error } = await detectBase(git)
