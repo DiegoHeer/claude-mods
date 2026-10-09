@@ -1,6 +1,6 @@
 {
   "name": "review-diff",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "Opens a pane showing the full diff of each file changed on this branch vs its base",
   "author": { "name": "Diego Heer" },
   "types": "./types/index.d.ts"
