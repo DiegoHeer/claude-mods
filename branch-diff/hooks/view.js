@@ -78,7 +78,7 @@ export function drawPane(
     flexDirection: 'row',
     columnGap: 2,
     children: [
-      Text({ bold: true, children: ['branch-diff'] }),
+      Text({ bold: true, children: ['review-diff'] }),
       dim(summary),
       Button({ key: 'toggle', label: isWholeFile ? 'changes only' : 'whole files', ...hotkey('f'), plain: true, onPress: onToggle }),
       Button({ key: 'refresh', label: 'refresh', ...hotkey('r'), plain: true, onPress: onRefresh }),

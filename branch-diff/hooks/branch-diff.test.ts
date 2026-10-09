@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const PLUGIN = 'branch-diff'
-const PANE_PROPS = { title: 'Branch diff', bodyColumns: 80 } as never
+const PANE = 'review-diff'
+const PANE_PROPS = { title: 'Review diff', bodyColumns: 80 } as never
 
 const DIFF = 'git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames'
 const numstat = (forkPoint: string) => `${DIFF} --numstat ${forkPoint}`
@@ -32,8 +33,8 @@ function fakeGit(on, answers: Record<string, string>, holdUntil?: (key: string) 
 }
 
 async function openPane($, surface: 'terminal' | 'desktop' | 'vscode' = 'terminal') {
-  await $.command.run({ command: 'branch-diff', args: '' })
-  return $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PLUGIN })
+  await $.command.run({ command: 'review-diff', args: '' })
+  return $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 }
 
 // The diff blocks in drawing order, whether drawn inside mouse-aware Clients or directly.
@@ -78,8 +79,8 @@ const BRANCH = {
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`stacks every changed file as a built-in diff block (${surface})`, async ($, on) => {
     fakeGit(on, BRANCH)
-    await $.command.run({ command: 'branch-diff', args: '' })
-    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PLUGIN })
+    await $.command.run({ command: 'review-diff', args: '' })
+    const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 
     expect(await ui.find({ text: 'vs origin/main · 2 files' })).toBeDefined()
     expect(await ui.find({ key: 'goto-src/app.js', text: 'src/app.js' })).toBeDefined()
@@ -584,7 +585,7 @@ test('offers no send button without drafts, nor where there is no mouse', async 
   expect(await ui.find({ key: 'send' })).toBeUndefined()
 
   await saveDraft(ui, 2, 'rename')
-  const plain = await $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'Pane', props: PANE_PROPS, requestId: PLUGIN })
+  const plain = await $.ui.mount({ plugin: PLUGIN, surface: 'vscode', component: 'Pane', props: PANE_PROPS, requestId: PANE })
   expect(await plain.find({ key: 'send' })).toBeUndefined()
 })
 

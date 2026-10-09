@@ -18,7 +18,7 @@ Update later with `/plugin marketplace update claude-mods`.
 
 ### branch-diff
 
-`/branch-diff` opens a pane with every file changed on this branch compared to its base,
+`/review-diff` opens a pane with every file changed on this branch compared to its base,
 committed, uncommitted and untracked work included, drawn like a pull request's
 "Files changed" view.
 

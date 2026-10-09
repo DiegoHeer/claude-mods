@@ -8,7 +8,7 @@
     {
       "name": "branch-diff",
       "source": "./branch-diff",
-      "description": "A /branch-diff pane with every file changed on this branch vs its base, GitHub-style"
+      "description": "A /review-diff pane with every file changed on this branch vs its base, GitHub-style"
     }
   ]
 }
