@@ -64,10 +64,10 @@ export function drawPane(
       ? [Box({ flexDirection: 'column', paddingLeft: 2, children: [option(FOLLOW, followLabel), ...worktrees.map((w) => option(w.path, nameOf(w)))] })]
       : []),
   ]
-  const choices = [FOLLOW, ...(worktrees ?? []).map((w) => w.path)]
+  const choices = [FOLLOW, ...worktrees.map((w) => w.path)]
   const nextChoice = () => choices[(choices.indexOf(isFollowing ? FOLLOW : target?.path) + 1) % choices.length]
   // With one worktree there is nothing to pick.
-  const hasPicker = worktrees?.length > 1
+  const hasPicker = worktrees.length > 1
   const picker = hasPicker ? drawPicker() : []
   const nextButton = hasPicker
     ? [Button({ key: 'next-worktree', label: 'next worktree', ...hotkey('w'), plain: true, onPress: () => pick(nextChoice()) })]

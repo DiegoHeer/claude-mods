@@ -14,12 +14,14 @@ const untrackedPatch = (path: string, context = 1000000) =>
 // Fake git: answers each command the mod runs from a table of argv → stdout,
 // a command run in another folder keyed `<folder>: <argv>` (see inDir).
 // The table is read on every call, so a test can change it between refreshes.
-function fakeGit(on, answers: Record<string, string>) {
+// `holdUntil` can keep an answer back, to let a test overlap two refreshes.
+function fakeGit(on, answers: Record<string, string>, holdUntil?: (key: string) => Promise<void> | undefined) {
   const calls: string[] = []
   on('process.run', async ($, e) => {
     const argv = e.argv.join(' ')
     const key = e.init?.cwd ? `${e.init.cwd}: ${argv}` : argv
     calls.push(key)
+    await holdUntil?.(key)
     if (key in answers) return { value: { exitCode: 0, stdout: answers[key], stderr: '' } }
     return { value: { exitCode: 1, stdout: '', stderr: 'unexpected: ' + key } }
   })
@@ -812,4 +814,124 @@ test('names the worktree in the review message', async ($, on) => {
   await saveDraft(ui, 2, 'rename')
   await ui.press({ key: 'send' })
   expect(submitted[0]).toMatch(/^Review comments on this branch \(vs origin\/main\), in the worktree at \/repo\/\.claude\/worktrees\/feat\. /)
+})
+
+const LIST = 'git worktree list --porcelain'
+
+test('keeps the newest refresh when an older one finishes after it', async ($, on) => {
+  let release
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  let holdsLeft = 0
+  const holdMainStat = (key: string) => (key === `${MAIN}: ${numstat('abc')}` && holdsLeft-- > 0 ? gate : undefined)
+  mock.clock(on)
+  fakeGit(on, WORKTREES, holdMainStat)
+  const ui = await openPane($)
+
+  holdsLeft = 1
+  const slow = ui.press({ key: 'refresh' })
+  await pickWorktree(ui, FEAT)
+  release()
+  await slow
+
+  expect(await pickerLabel(ui)).toBe('worktree: feat ▾')
+  expect(await ui.find({ text: 'vs origin/main · 2 files' })).toBeDefined()
+})
+
+test('keeps following a worktree when Claude edits a file outside every worktree', async ($, on) => {
+  const { clock } = inSession(on)
+  on('tool.call', () => ({ result: 'ok' }))
+  const ui = await openPane($)
+
+  await editIn(FEAT, $, clock)
+  await $.tool.call({ tool: 'Write', file_path: '/tmp/notes.txt', content: 'hi' })
+  await clock.advance(300)
+  expect(await pickerLabel(ui)).toBe('worktree: follow Claude (feat) ▾')
+})
+
+test('keeps a half-typed comment as a draft when following moves to another worktree', async ($, on) => {
+  const { clock } = inSession(on, { ...WORKTREES, ...inDir(MAIN, BRANCH) })
+  on('tool.call', () => ({ result: 'ok' }))
+  const ui = await openPane($)
+
+  await click(ui, APP_BLOCK, 2)
+  await ui.input({ key: 'comment-box', text: 'half typed', kind: 'change' })
+  await editIn(FEAT, $, clock)
+  await pickWorktree(ui, MAIN)
+  expect((await ui.find({ key: 'draft-1' }))?.text).toContain('half typed')
+})
+
+test('shows drafts whose worktree is gone, so they can still be sent or deleted', async ($, on) => {
+  const answers = { ...WORKTREES, [LIST]: WORKTREES[LIST] + `worktree /tmp/spike\nHEAD def\nbranch refs/heads/spike\n\n`, ...inDir('/tmp/spike', BRANCH) }
+  inSession(on, answers)
+  const ui = await openPane($)
+
+  await pickWorktree(ui, '/tmp/spike')
+  await saveDraft(ui, 2, 'rename')
+  answers[LIST] = WORKTREES[LIST]
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ key: 'draft-1' })).toBeDefined()
+})
+
+test('goes back to the session worktree when Claude leaves a worktree', async ($, on) => {
+  const { clock } = inSession(on)
+  on('tool.call', ($, e) => ({ result: e.tool === 'EnterWorktree' ? { worktreePath: FEAT, message: '' } : { message: '' } }))
+  const ui = await openPane($)
+
+  await $.tool.call({ tool: 'EnterWorktree', name: 'feat' })
+  await $.tool.call({ tool: 'ExitWorktree', action: 'keep' })
+  await clock.advance(300)
+  expect(await pickerLabel(ui)).toBe('worktree: follow Claude (main) ▾')
+})
+
+test('follows an edit through a symlinked path, asking git for its worktree', async ($, on) => {
+  const { clock } = inSession(on, { ...WORKTREES, 'git -C /link/feat/src rev-parse --show-toplevel': FEAT + '\n' })
+  on('tool.call', () => ({ result: 'ok' }))
+  const ui = await openPane($)
+
+  await editIn('/link/feat', $, clock)
+  expect(await pickerLabel(ui)).toBe('worktree: follow Claude (feat) ▾')
+})
+
+test('follows an edit whose path uses backslashes', async ($, on) => {
+  const { clock } = inSession(on)
+  on('tool.call', () => ({ result: 'ok' }))
+  const ui = await openPane($)
+
+  await $.tool.call({ tool: 'Edit', file_path: FEAT.replaceAll('/', '\\') + '\\app.js', old_string: '3', new_string: '4' })
+  await clock.advance(300)
+  expect(await pickerLabel(ui)).toBe('worktree: follow Claude (feat) ▾')
+})
+
+test('keeps the picked worktree when listing worktrees fails once', async ($, on) => {
+  const answers = { ...WORKTREES }
+  inSession(on, answers)
+  const ui = await openPane($)
+
+  await pickWorktree(ui, FEAT)
+  delete answers[LIST]
+  await ui.press({ key: 'refresh' })
+  answers[LIST] = WORKTREES[LIST]
+  await ui.press({ key: 'refresh' })
+  expect(await pickerLabel(ui)).toBe('worktree: feat ▾')
+})
+
+test('leaves out a worktree whose folder was deleted', async ($, on) => {
+  inSession(on, { ...WORKTREES, [LIST]: WORKTREES[LIST] + `worktree /gone\nHEAD def\nbranch refs/heads/gone\nprunable gitdir file points to non-existent location\n\n` })
+  const ui = await openPane($)
+
+  await ui.press({ key: 'worktree' })
+  expect(await ui.find({ key: 'worktree-/gone' })).toBeUndefined()
+})
+
+test('closes the worktree list when the second worktree goes away', async ($, on) => {
+  const answers = { ...WORKTREES }
+  inSession(on, answers)
+  const ui = await openPane($)
+
+  await ui.press({ key: 'worktree' })
+  answers[LIST] = `worktree ${MAIN}\nHEAD abc\nbranch refs/heads/main\n\n`
+  await ui.press({ key: 'refresh' })
+  answers[LIST] = WORKTREES[LIST]
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ key: 'worktree-' + FEAT })).toBeUndefined()
 })
