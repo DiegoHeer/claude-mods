@@ -33,6 +33,20 @@ test('active draws the cship colors', async ($, on) => {
   expect(JSON.parse(runs[0].stdin ?? '{}').session_id).toBe('abc')
 })
 
+test('keeps the engine hint under the line', async ($, on) => {
+  mock.store(on, { active: true })
+  const clock = mock.clock(on)
+  fakeEngine(on)
+  await $.session.start(START)
+  const ui = await mountHint($)
+  await clock.settle()
+  const texts = (await ui.findAll({ type: 'Text' })).map((t) => t.text)
+  const lineAt = texts.findIndex((text) => text.includes('$0.42'))
+  const hintAt = texts.findIndex((text) => text.includes('? for shortcuts'))
+  expect(lineAt).toBeGreaterThan(-1)
+  expect(hintAt).toBeGreaterThan(lineAt)
+})
+
 test('refreshes on measure and every 30s', async ($, on) => {
   mock.store(on, { active: true })
   const clock = mock.clock(on)

@@ -26,9 +26,12 @@ const logToDebug = ($, text) => $.ui.log(`statusline: ${text}`, { to: 'debug' })
 // Work started from a hook or timer that nobody awaits.
 const inBackground = ($, work) => work.catch((error) => logToDebug($, error?.message ?? String(error)))
 
-// The first run is not awaited: the first prompt would wait on cship.
+// Settings are read before the line counts as active, so a line kept in session state across a
+// reload is never drawn beside another statusline. The first run is not awaited: the first
+// prompt would wait on cship.
 async function startLine($) {
   if (isActive) return
+  isHidden = await hasOtherStatusLine($).catch((error) => (logToDebug($, error.message), false))
   isActive = true
   timer = $.clock.every(REFRESH_MS, () => inBackground($, refresh($)))
   inBackground($, recheckSettings($))
@@ -41,9 +44,11 @@ async function stopLine($) {
   await update($, lineAtom, () => null)
 }
 
+const hasOtherStatusLine = async ($) => 'statusLine' in (await $.settings.read())
+
 async function recheckSettings($) {
   if (!isActive) return
-  isHidden = 'statusLine' in (await $.settings.read())
+  isHidden = await hasOtherStatusLine($)
   if (isHidden) await update($, lineAtom, () => null)
   else await refresh($)
 }
@@ -100,7 +105,8 @@ async function drawLine($, e, next) {
   if (!rows || !isVisible()) return next(e)
   const { Box, Text } = $.ui.resolve(e)
   const drawRow = (spans) => h(Text, {}, ...spans.map(({ text, ...style }) => h(Text, style, text)))
-  return h(Box, { flexDirection: 'column' }, ...rows.map(drawRow))
+  // The engine's hint stays under the line: it carries 'esc to interrupt' and 'Ctrl-C again to exit'.
+  return h(Box, { flexDirection: 'column' }, ...rows.map(drawRow), await next(e))
 }
 
 // What install.js reaches the engine through.
@@ -117,8 +123,8 @@ const installIo = ($) => ({
 })
 
 // Shown once per machine, on the first interactive session after the plugin is installed.
-async function welcome($, isActive) {
-  if (isActive || (await $.store.get('welcomed')) === true) return
+async function welcome($, isTurnedOn) {
+  if (isTurnedOn || (await $.store.get('welcomed')) === true) return
   $.ui.toast('statusline: run /statusline-install to turn it on')
   await $.store.set('welcomed', true)
 }
@@ -128,9 +134,9 @@ export const register = (on) => {
     await $.command.register({ name: 'statusline-install', description: 'Set up and turn on the cship statusline' })
     await $.command.register({ name: 'statusline-uninstall', description: 'Turn off the cship statusline' })
     if (!e.isInteractive) return next(e)
-    const isActive = (await $.store.get('active')) === true
-    if (isActive) await startLine($)
-    await welcome($, isActive)
+    const isTurnedOn = (await $.store.get('active')) === true
+    if (isTurnedOn) await startLine($)
+    await welcome($, isTurnedOn)
     return next(e)
   })
 
