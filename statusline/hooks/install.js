@@ -7,15 +7,27 @@ import { statusLineSources } from './settings.js'
 const STOPPED = 'Install stopped. The statusline is still off.'
 const AGAIN = '/statusline-install again'
 
-const CSHIP_RELEASES = 'https://github.com/stephenleo/cship/releases/latest/download/cship-'
-const CSHIP_TARGETS = {
-  'Linux x86_64': 'x86_64-unknown-linux-musl',
-  'Linux aarch64': 'aarch64-unknown-linux-musl',
-  'Darwin x86_64': 'x86_64-apple-darwin',
-  'Darwin arm64': 'aarch64-apple-darwin',
+// Pinned so the binary run every 30 s is the one checked here: sha256 digests from the v1.8.1 release.
+const CSHIP_RELEASE = 'https://github.com/stephenleo/cship/releases/download/v1.8.1/cship-'
+const CSHIP_BUILDS = {
+  'Linux x86_64': ['x86_64-unknown-linux-musl', 'f39e0423a2260b2886ba8952504f9f3e16acd4071834fa419ffef5e4cf84c506'],
+  'Linux aarch64': ['aarch64-unknown-linux-musl', '5f97c266db4d9bdf71ed175075a9578b80739102c4225b94e61ed04ec90b8680'],
+  'Darwin x86_64': ['x86_64-apple-darwin', '5118feff504154d532a8bbcf9b76fa0024abf5c84acfd65ab0d1282b7bd09649'],
+  'Darwin arm64': ['aarch64-apple-darwin', '21cd34887a31bb35496d5b632d178691f0144b9602184f4cae023953774dd8e3'],
 }
-const DOWNLOAD_CSHIP =
-  'mkdir -p "$HOME/.local/bin" && curl -fsSL -o "$HOME/.local/bin/cship" "$1" && chmod +x "$HOME/.local/bin/cship"'
+// Downloads $1 to a temp file, checks it against sha256 $2, and only then moves it into place.
+const DOWNLOAD_CSHIP = [
+  'set -e',
+  'dir="$HOME/.local/bin"',
+  'mkdir -p "$dir"',
+  'tmp=$(mktemp "$dir/.cship.XXXXXX")',
+  'trap \'rm -f "$tmp"\' EXIT',
+  'curl -fsSL -o "$tmp" "$1"',
+  'sum=$({ sha256sum "$tmp" 2>/dev/null || shasum -a 256 "$tmp"; } | cut -d " " -f 1)',
+  '[ "$sum" = "$2" ] || { echo "the download does not match its sha256" >&2; exit 1; }',
+  'chmod +x "$tmp"',
+  'mv "$tmp" "$dir/cship"',
+].join('; ')
 const INSTALL_STARSHIP = 'set -o pipefail; mkdir -p "$HOME/.local/bin" && curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"'
 
 // Package managers in the order tried, with how each installs and what it calls each tool.
@@ -41,18 +53,20 @@ async function confirm(io, question, yes) {
   if (answer !== yes) throw new Stop(STOPPED)
 }
 
+// A run that times out rejects instead of exiting non-zero; both are a failed step.
 async function installStep(io, tool, argv, timeoutMs) {
-  const { exitCode, stderr } = await io.run(argv, { timeoutMs })
+  const { exitCode, stderr } = await io.run(argv, { timeoutMs }).catch((error) => ({ exitCode: -1, stderr: error.message }))
   if (exitCode !== 0) throw new Stop(`Could not install ${tool}: ${firstLine(stderr)}`)
   if (!(await has(io, tool))) throw new Stop(`Could not install ${tool}: it is still not on PATH after the install.`)
 }
 
 async function ensureCship(io, platform) {
   if (await has(io, 'cship')) return
-  const target = CSHIP_TARGETS[platform]
-  if (!target) throw new Stop(`cship has no build for ${platform}. Install it by hand: https://github.com/stephenleo/cship`)
+  const build = CSHIP_BUILDS[platform]
+  if (!build) throw new Stop(`cship has no build for ${platform}. Install it by hand: https://github.com/stephenleo/cship`)
+  const [target, sha256] = build
   await confirm(io, 'Download cship to ~/.local/bin/cship?', 'Download')
-  await installStep(io, 'cship', ['bash', '-c', DOWNLOAD_CSHIP, '_', CSHIP_RELEASES + target], 120000)
+  await installStep(io, 'cship', ['bash', '-c', DOWNLOAD_CSHIP, '_', CSHIP_RELEASE + target, sha256], 120000)
   await io.set('installedCship', true)
 }
 
@@ -80,6 +94,7 @@ export async function runInstall(io) {
   if (places.length > 0) {
     return `You already use a statusline (statusLine in ${places.join(', ')}). Remove it there, then run ${AGAIN}.`
   }
+  if ((await io.get('active')) === true) return 'Statusline is already on.'
   try {
     const platform = (await io.run(['uname', '-sm'])).stdout.trim()
     await ensureCship(io, platform)
@@ -89,7 +104,6 @@ export async function runInstall(io) {
     if (error instanceof Stop) return error.message
     throw error
   }
-  if ((await io.get('active')) === true) return 'Statusline is already on.'
   await io.set('active', true)
   await io.activate()
   return 'Statusline on.'
@@ -108,7 +122,8 @@ export async function runUninstall(io) {
   await io.set('active', false)
   await io.deactivate()
   if (answer === TURN_OFF) return 'Statusline off. Run /statusline-install to turn it back on.'
-  await io.run(['bash', '-c', 'rm -f "$HOME/.local/bin/cship"'])
+  const { exitCode, stderr } = await io.run(['bash', '-c', 'rm -f "$HOME/.local/bin/cship"'])
+  if (exitCode !== 0) return `Statusline off. Could not delete cship: ${firstLine(stderr)}. Run /statusline-install to turn it back on.`
   await io.delete('installedCship')
   return 'Statusline off, cship deleted. Run /statusline-install to turn it back on.'
 }

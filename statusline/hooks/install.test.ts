@@ -4,14 +4,26 @@ import { runInstall, runUninstall } from './install.js'
 
 const ALL_TOOLS = ['cship', 'starship', 'jq', 'secret-tool', 'dnf']
 const STOPPED = 'Install stopped. The statusline is still off.'
-const CSHIP_URL = 'https://github.com/stephenleo/cship/releases/latest/download/cship-x86_64-unknown-linux-musl'
+const CSHIP_URL = 'https://github.com/stephenleo/cship/releases/download/v1.8.1/cship-x86_64-unknown-linux-musl'
+const CSHIP_SHA256 = 'f39e0423a2260b2886ba8952504f9f3e16acd4071834fa419ffef5e4cf84c506'
+
+type FakeOpts = {
+  tools?: string[]
+  uname?: string
+  answers?: string[]
+  sources?: object
+  store?: object
+  failInstall?: boolean
+  silentFail?: boolean
+  timeout?: boolean
+  rmFails?: boolean
+}
 
 // What runInstall reaches the engine through, answered from memory: `tools` are on PATH,
 // `answers` are the person's picks in order (none left = the dialog is dismissed).
 // `silentFail`: an install step exits 0 but the tool is still missing, as `curl | sh` does when curl fails.
-function fakeIo(
-  opts: { tools?: string[]; uname?: string; answers?: string[]; sources?: object; store?: object; failInstall?: boolean; silentFail?: boolean } = {},
-) {
+// `timeout`: an install step's run rejects, as $.process.run does past its timeout.
+function fakeIo(opts: FakeOpts = {}) {
   const tools = [...(opts.tools ?? ALL_TOOLS)]
   const answers = [...(opts.answers ?? [])]
   const store: Record<string, unknown> = { ...opts.store }
@@ -26,9 +38,13 @@ function fakeIo(
       runs.push(argv)
       if (argv[0] === 'uname') return { exitCode: 0, stdout: `${opts.uname ?? 'Linux x86_64'}\n`, stderr: '' }
       if (argv[2]?.includes('command -v')) return { exitCode: tools.includes(argv[4]) ? 0 : 1, stdout: '', stderr: '' }
+      if (argv[2] === 'rm -f "$HOME/.local/bin/cship"') {
+        return opts.rmFails ? { exitCode: 1, stdout: '', stderr: 'rm: Operation not permitted\n' } : { exitCode: 0, stdout: '', stderr: '' }
+      }
+      if (opts.timeout) throw new Error('process.run: still running after 120000 ms')
       if (opts.failInstall) return { exitCode: 22, stdout: '', stderr: 'curl: (22) 404\nmore' }
       if (opts.silentFail) return { exitCode: 0, stdout: '', stderr: '' }
-      tools.push(argv.at(-1) === CSHIP_URL ? 'cship' : 'starship')
+      tools.push(argv.includes(CSHIP_URL) ? 'cship' : 'starship')
       return { exitCode: 0, stdout: '', stderr: '' }
     },
     ask: async (question: string) => {
@@ -86,6 +102,15 @@ describe('runUninstall', () => {
     expect(fake.store.active).toBe(false)
   })
 
+  test('a failed delete says so and keeps the offer', async () => {
+    const fake = fakeIo({ store: { active: true, installedCship: true }, answers: ['Turn off and delete cship'], rmFails: true })
+    expect(await runUninstall(fake.io)).toBe(
+      'Statusline off. Could not delete cship: rm: Operation not permitted. Run /statusline-install to turn it back on.',
+    )
+    expect(fake.store.installedCship).toBe(true)
+    expect(fake.store.active).toBe(false)
+  })
+
   test('cancel changes nothing', async () => {
     for (const answers of [['Cancel'], []]) {
       const fake = fakeIo({ store: { active: true }, answers })
@@ -99,9 +124,24 @@ describe('runInstall', () => {
   test('downloads cship for this platform', async () => {
     const fake = fakeIo({ tools: ALL_TOOLS.filter((t) => t !== 'cship'), answers: ['Download'] })
     expect(await runInstall(fake.io)).toBe('Statusline on.')
-    expect(fake.runs.some((argv) => argv.at(-1) === CSHIP_URL)).toBe(true)
     expect(fake.store).toEqual({ installedCship: true, active: true })
     expect(fake.isActivated()).toBe(true)
+  })
+
+  test('downloads a pinned cship and checks its sha256 before it lands', async () => {
+    const fake = fakeIo({ tools: ALL_TOOLS.filter((t) => t !== 'cship'), answers: ['Download'] })
+    await runInstall(fake.io)
+    const download = fake.runs.find((argv) => argv.includes(CSHIP_URL))
+    expect(download?.slice(-2)).toEqual([CSHIP_URL, CSHIP_SHA256])
+    const script = download?.[2] ?? ''
+    expect(script.indexOf('"$2"')).toBeGreaterThan(-1) // the checksum is compared
+    expect(script.indexOf('"$2"')).toBeLessThan(script.indexOf('mv ')) // before the binary is moved into place
+  })
+
+  test('a download that times out is a failed step', async () => {
+    const fake = fakeIo({ tools: ['starship', 'jq', 'secret-tool'], answers: ['Download'], timeout: true })
+    expect(await runInstall(fake.io)).toBe('Could not install cship: process.run: still running after 120000 ms')
+    expect(fake.store.active).toBeUndefined()
   })
 
   test('a platform cship has no build for', async () => {
@@ -188,6 +228,13 @@ describe('runInstall', () => {
     const fake = fakeIo({ store: { active: true } })
     expect(await runInstall(fake.io)).toBe('Statusline is already on.')
     expect(fake.isActivated()).toBe(false)
+  })
+
+  test('already on asks and probes nothing', async () => {
+    const fake = fakeIo({ tools: [], store: { active: true } })
+    expect(await runInstall(fake.io)).toBe('Statusline is already on.')
+    expect(fake.runs).toHaveLength(0)
+    expect(fake.asks).toHaveLength(0)
   })
 })
 
