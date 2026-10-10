@@ -1,18 +1,21 @@
 // Draws the pane: a row of tabs, the key hint, then the selected file as markdown.
 
-const READER_LIMIT = 90_000 // the pane draws 100 000 characters in all; tabs and path take the rest
-const CUT_NOTE = '\n\n_File cut at 90 000 characters._'
+const PANE_TEXT_LIMIT = 100_000 // the most text a pane draws, tabs and path included
+const HINT_ROOM = 200 // the key hint, with room to spare
+const CUT_NOTE = '\n\n_File cut: too long to show in full._'
 
 const MESSAGES = {
   deleted: 'This file was deleted.',
   unreadable: 'This file could not be read.',
 }
 
-function readerText(content) {
+function readerText(content, room) {
   if (content.kind !== 'text') return MESSAGES[content.kind]
-  if (content.text.length <= READER_LIMIT) return content.text
-  return content.text.slice(0, READER_LIMIT - CUT_NOTE.length) + CUT_NOTE
+  if (content.text.length <= room) return content.text
+  return content.text.slice(0, Math.max(0, room - CUT_NOTE.length)) + CUT_NOTE
 }
+
+const readerRoom = (labels, selected) => PANE_TEXT_LIMIT - HINT_ROOM - selected.length - [...labels.values()].join('').length
 
 export function drawPane({ Box, Text, Button, Markdown }, { paths, labels, selected, content, onSelect, onStep }) {
   const dim = (text) => Text({ dimColor: true, children: [text] })
@@ -39,7 +42,7 @@ export function drawPane({ Box, Text, Button, Markdown }, { paths, labels, selec
         ],
       }),
       dim(selected),
-      Markdown({ key: 'reader', text: readerText(content) }),
+      Markdown({ key: 'reader', text: readerText(content, readerRoom(labels, selected)) }),
     ],
   })
 }

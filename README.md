@@ -63,7 +63,7 @@ Write or Edit tool.
 - The pane refreshes on its own after Claude writes, edits or runs commands;
   a new file gets a tab without moving you off the one you are reading
 - Tabs follow the conversation: a resume brings them back, `/clear` starts empty
-- A deleted file keeps its tab; files over 90 000 characters are cut
+- A deleted file keeps its tab; a file too long for the pane (about 100 000 characters) is cut
 
 ## Develop
 

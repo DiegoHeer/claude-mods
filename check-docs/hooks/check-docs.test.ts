@@ -11,30 +11,51 @@ const write = (path: string) => ({
   toolUses: [{ tool_use_id: `t${++nextId}`, tool: 'Write', input: { file_path: path, content: '#' }, text: 'ok' }],
 })
 
-// Fake engine: the conversation (its id and rows), the files on disk and the open
-// panes, all read on every call so a test can change them between steps.
-function fakeEngine(on, world: { rows: unknown[]; files: Record<string, string | Error>; conversation?: string }) {
+type World = {
+  rows: unknown[]
+  files: Record<string, string | Error>
+  conversation?: string
+  isHidden?: boolean // the pane is open but not shown
+  isStoreFull?: boolean // every store write is refused
+  onMessages?: () => void // runs as the history is read, to change the world mid-refresh
+}
+
+// Fake engine: the conversation (its id and rows), the files on disk, the store and
+// the open panes, all read on every call so a test can change them between steps.
+function fakeEngine(on, world: World) {
   const panes = new Set<string>()
   const closed: string[] = []
-  mock.store(on)
+  const opened: string[] = []
+  const reads: string[] = []
+  const store: Record<string, unknown> = {}
+  let historyReads = 0
   on('command.register', async () => ({ value: undefined }))
   on('classic.SessionStart', async () => ({}))
   on('session.id', async () => ({ value: world.conversation ?? 'c1' }))
-  on('session.messages', async () => ({ value: world.rows }))
+  on('session.messages', async () => {
+    historyReads++
+    world.onMessages?.()
+    return { value: world.rows }
+  })
+  on('store.get', async ($, e) => ({ value: store[e.key] }))
+  on('store.set', async ($, e) => (world.isStoreFull ? { deny: 'store full' } : ((store[e.key] = e.value), { value: undefined })))
   on('fs.exists', async ($, e) => ({ value: e.path in world.files }))
   on('fs.read', async ($, e) => {
+    reads.push(e.path)
     const file = world.files[e.path]
     return typeof file === 'string' ? { value: file } : { deny: 'unreadable' }
   })
-  on('ui.open', async ($, e) => (panes.add(e.id), { value: { isPlaced: true } }))
+  on('ui.open', async ($, e) => (panes.add(e.id), opened.push(e.id), { value: { isPlaced: true } }))
   on('ui.close', async ($, e, next) => {
     if (e.origin.kind !== 'plugin') return next(e)
     panes.delete(e.id)
     closed.push(e.id)
     return { value: undefined }
   })
-  on('ui.panes', async () => ({ value: [...panes].map((id) => ({ id, title: 'Check docs', isShown: true, isFocused: true, isPlaced: true })) }))
-  return { closed }
+  on('ui.panes', async () => ({
+    value: [...panes].map((id) => ({ id, title: 'Check docs', isShown: !world.isHidden, isFocused: !world.isHidden, isPlaced: true })),
+  }))
+  return { closed, opened, reads, historyReads: () => historyReads }
 }
 
 async function openPane($, surface: 'terminal' | 'desktop' = 'terminal') {
@@ -112,9 +133,46 @@ test('cuts a huge file', async ($, on) => {
   fakeEngine(on, { rows: [write('/r/big.md')], files: { '/r/big.md': 'x'.repeat(150_000) } })
   const ui = await openPane($)
   const text = await readerText(ui)
-  expect(text.startsWith('x'.repeat(89_000))).toBe(true)
-  expect(text.endsWith('_File cut at 90 000 characters._')).toBe(true)
-  expect(text.length).toBeLessThanOrEqual(90_000)
+  expect(text.startsWith('x'.repeat(90_000))).toBe(true)
+  expect(text.endsWith('_File cut: too long to show in full._')).toBe(true)
+  expect(text.length).toBeLessThanOrEqual(100_000)
+})
+
+test('many tabs leave the reader room within the pane limit', async ($, on) => {
+  const names = Array.from({ length: 300 }, (_, i) => `/r/${'long-name-'.repeat(10)}${i}.md`)
+  const files = Object.fromEntries(names.map((name) => [name, 'x'.repeat(150_000)]))
+  fakeEngine(on, { rows: names.map(write), files })
+  const ui = await openPane($)
+  const text = await readerText(ui)
+  const tabsLength = names.reduce((sum, name) => sum + name.length - 3, 0)
+  expect(text.endsWith('_File cut: too long to show in full._')).toBe(true)
+  expect(tabsLength + text.length).toBeLessThan(100_000)
+})
+
+test('/check-docs shows a hidden pane instead of closing it', async ($, on) => {
+  const world: World = TWO_FILES()
+  const { closed, opened } = fakeEngine(on, world)
+  await openPane($)
+  world.isHidden = true
+  await $.command.run({ command: 'check-docs', args: '' })
+  expect(closed).toEqual([])
+  expect(opened).toEqual([PANE, PANE])
+})
+
+test('switching tabs reads each file once', async ($, on) => {
+  const { reads } = fakeEngine(on, TWO_FILES())
+  const ui = await openPane($)
+  await ui.press({ key: 'next' })
+  await ui.press({ key: 'previous' })
+  await ui.press({ key: 'next' })
+  expect(reads.filter((path) => path === '/r/a.md')).toHaveLength(1)
+  expect(reads.filter((path) => path === '/r/b.md')).toHaveLength(1)
+})
+
+test('opens even when the store is full', async ($, on) => {
+  fakeEngine(on, { ...TWO_FILES(), isStoreFull: true })
+  const ui = await openPane($)
+  expect(await tabKeys(ui)).toEqual(['tab-/r/b.md', 'tab-/r/a.md'])
 })
 
 test('survives an unreadable file', async ($, on) => {
@@ -157,20 +215,21 @@ test('an edit redraws the selected file', async ($, on) => {
   expect(await readerText(ui)).toBe('# B doc, edited')
 })
 
-test('a shell command redraws without adding a tab', async ($, on) => {
+test('a shell command redraws without rereading the history', async ($, on) => {
   const world = TWO_FILES()
-  fakeEngine(on, world)
+  const { historyReads } = fakeEngine(on, world)
   toolsSucceed(on)
   const clock = mock.clock(on)
   const ui = await openPane($)
+  const readsBefore = historyReads()
 
   world.files['/r/b.md'] = '# B doc, by sed'
-  world.files['/r/other.md'] = '# Other'
   await $.tool.call({ tool: 'Bash', command: 'sed -i s/x/y/ /r/b.md' })
   await clock.advance(300)
 
   expect(await readerText(ui)).toBe('# B doc, by sed')
   expect(await tabKeys(ui)).toEqual(['tab-/r/b.md', 'tab-/r/a.md'])
+  expect(historyReads()).toBe(readsBefore)
 })
 
 test('/clear empties the tabs', async ($, on) => {
@@ -208,4 +267,37 @@ test("resume shows that conversation's tabs", async ($, on) => {
 
   expect(await tabKeys(ui)).toEqual(['tab-/r/y.md', 'tab-/r/x.md'])
   expect(await readerText(ui)).toBe('# Y')
+})
+
+test('resume selects the newest tab even when the old pick is there too', async ($, on) => {
+  const world = TWO_FILES()
+  fakeEngine(on, world)
+  const ui = await openPane($)
+  await ui.press({ key: 'tab-/r/a.md' })
+
+  world.rows = [write('/r/a.md'), write('/r/y.md')]
+  world.files['/r/y.md'] = '# Y'
+  world.conversation = 'c2'
+  await $.classic.SessionStart({ source: 'resume' })
+
+  expect(await readerText(ui)).toBe('# Y')
+})
+
+test('a switch mid-refresh does not save its files under the old conversation', async ($, on) => {
+  const world: World = TWO_FILES()
+  fakeEngine(on, world)
+  const ui = await openPane($)
+
+  world.onMessages = () => {
+    world.conversation = 'c2'
+    world.rows = [write('/r/x.md')]
+    world.onMessages = undefined
+  }
+  await $.classic.SessionStart({ source: 'compact' })
+
+  world.conversation = 'c1'
+  world.rows = []
+  await $.classic.SessionStart({ source: 'compact' })
+
+  expect(await tabKeys(ui)).toEqual(['tab-/r/b.md', 'tab-/r/a.md'])
 })
