@@ -11,6 +11,7 @@ In a Claude Code session:
 /plugin marketplace add DiegoHeer/claude-mods
 /plugin install review-diff@claude-mods
 /plugin install check-docs@claude-mods
+/plugin install skills@claude-mods
 ```
 
 Update later with `/plugin marketplace update claude-mods`.
@@ -64,6 +65,15 @@ Write or Edit tool.
   a new file gets a tab without moving you off the one you are reading
 - Tabs follow the conversation: a resume brings them back, `/clear` starts empty
 - A deleted file keeps its tab; a file too long for the pane (about 100 000 characters) is cut
+
+### skills
+
+`/skills:install` copies skills from the plugin's `skills/library/` folder.
+Claude asks which skills you want, then where: globally (`~/.claude/skills/`) or into
+this repo (`.claude/skills/`). If a skill is already there, it asks to overwrite or skip.
+Nothing is committed.
+
+To add a skill to the library, put its folder (with `SKILL.md`) in `skills/library/`.
 
 ## Develop
 

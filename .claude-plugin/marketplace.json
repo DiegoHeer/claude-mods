@@ -14,6 +14,11 @@
       "name": "check-docs",
       "source": "./check-docs",
       "description": "A /check-docs pane with this conversation's markdown files, as tabs"
+    },
+    {
+      "name": "skills",
+      "source": "./skills",
+      "description": "A /skills:install command that copies picked skills globally or into this repo"
     }
   ]
 }
