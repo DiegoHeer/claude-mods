@@ -1,0 +1,4 @@
+{
+  "description": "statusline hooks",
+  "modules": ["./register.js"]
+}

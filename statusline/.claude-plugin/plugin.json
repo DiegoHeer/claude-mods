@@ -1,0 +1,7 @@
+{
+  "name": "statusline",
+  "version": "0.1.0",
+  "description": "A cship statusline under the prompt, set up with /statusline-install",
+  "author": { "name": "Diego Heer" },
+  "types": "./types/index.d.ts"
+}
