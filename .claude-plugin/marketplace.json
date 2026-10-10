@@ -11,9 +11,9 @@
       "description": "A /review-diff pane with every file changed on this branch vs its base, GitHub-style"
     },
     {
-      "name": "install-skills",
-      "source": "./install-skills",
-      "description": "An /install-skills command that copies picked skills globally or into this repo"
+      "name": "skills",
+      "source": "./skills",
+      "description": "A /skills:install command that copies picked skills globally or into this repo"
     }
   ]
 }
