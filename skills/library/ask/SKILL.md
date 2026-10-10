@@ -1,7 +1,9 @@
 ---
 name: ask
-description: Ask the user questions with the AskUserQuestion tool instead of plain text, for the rest of this session.
+description: Re-ask the open questions from your latest message using the AskUserQuestion tool.
 disable-model-invocation: true
 ---
 
-For the rest of this session, when you need to ask me a question, use the AskUserQuestion tool. Do not ask it in plain text.
+Take the questions from your latest message that I have not answered yet, and ask them again using the AskUserQuestion tool. If there are no open questions, say so.
+
+This applies only to those questions. Afterwards, ask any new questions the normal way.
