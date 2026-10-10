@@ -1,0 +1,4 @@
+{
+  "description": "check-docs hooks",
+  "modules": ["./register.js"]
+}
