@@ -10,6 +10,7 @@ In a Claude Code session:
 ```
 /plugin marketplace add DiegoHeer/claude-mods
 /plugin install review-diff@claude-mods
+/plugin install check-docs@claude-mods
 /plugin install skills@claude-mods
 ```
 
@@ -50,6 +51,21 @@ Review comments (terminal and desktop, needs the mouse):
 - Type the comment and press Enter to keep it as a draft (`✎` marks its lines)
 - `s` sends all drafts to Claude as one review message
 
+### check-docs
+
+`/check-docs` opens a pane with the markdown files written in this conversation, such as
+specs and plans, one tab per file, newest first. The selected file is drawn as formatted
+markdown. Run `/check-docs` again to close it.
+
+A file counts when Claude, or one of its subagents, wrote or edited a `.md` file with the
+Write or Edit tool.
+
+- `n` goes to the next tab, `p` to the previous one; press a tab to pick it
+- The pane refreshes on its own after Claude writes, edits or runs commands;
+  a new file gets a tab without moving you off the one you are reading
+- Tabs follow the conversation: a resume brings them back, `/clear` starts empty
+- A deleted file keeps its tab; a file too long for the pane (about 100 000 characters) is cut
+
 ### skills
 
 `/skills:install` copies skills from the plugin's `skills/library/` folder.
@@ -65,4 +81,8 @@ To add a skill to the library, put its folder (with `SKILL.md`) in `skills/libra
 claude plugin validate ./review-diff
 claude plugin test ./review-diff
 claude --plugin-dir ./review-diff
+
+claude plugin validate ./check-docs
+claude plugin test ./check-docs
+claude --plugin-dir ./check-docs
 ```

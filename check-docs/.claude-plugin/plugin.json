@@ -1,0 +1,7 @@
+{
+  "name": "check-docs",
+  "version": "1.0.0",
+  "description": "A /check-docs pane with the markdown files written in this conversation, as tabs",
+  "author": { "name": "Diego Heer" },
+  "types": "./types/index.d.ts"
+}
