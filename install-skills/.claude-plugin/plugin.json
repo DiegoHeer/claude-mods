@@ -1,0 +1,6 @@
+{
+  "name": "install-skills",
+  "version": "0.1.0",
+  "description": "Copies picked skills from a bundled library into ~/.claude/skills or this repo's .claude/skills",
+  "author": { "name": "Diego Heer" }
+}
