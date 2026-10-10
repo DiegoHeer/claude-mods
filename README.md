@@ -10,6 +10,7 @@ In a Claude Code session:
 ```
 /plugin marketplace add DiegoHeer/claude-mods
 /plugin install review-diff@claude-mods
+/plugin install install-skills@claude-mods
 ```
 
 Update later with `/plugin marketplace update claude-mods`.
@@ -48,6 +49,15 @@ Review comments (terminal and desktop, needs the mouse):
 - Click a line to comment on it; drag or shift-click to pick several lines
 - Type the comment and press Enter to keep it as a draft (`✎` marks its lines)
 - `s` sends all drafts to Claude as one review message
+
+### install-skills
+
+`/install-skills` copies skills from the plugin's `install-skills/library/` folder.
+Claude asks which skills you want, then where: globally (`~/.claude/skills/`) or into
+this repo (`.claude/skills/`). If a skill is already there, it asks to overwrite or skip.
+Nothing is committed.
+
+To add a skill to the library, put its folder (with `SKILL.md`) in `install-skills/library/`.
 
 ## Develop
 
