@@ -1,0 +1,5 @@
+# cship — FULL layout (wide terminals): dir/git + widgets, one line
+[cship]
+lines = [
+  "$directory$git_branch$git_status │ $cship.model │ $cship.cost │ ctx $cship.context_bar │ $cship.usage_limits"
+]

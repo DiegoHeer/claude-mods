@@ -1,8 +1,4 @@
-# cship — COMPACT layout (narrow terminals): widgets only
-[cship]
-lines = [
-  "$cship.model │ $cship.cost │ ctx $cship.context_bar │ $cship.usage_limits"
-]
+# cship — module settings shared by both layouts; statusline.sh appends this to layout-*.toml
 
 [cship.model]
 symbol = ""

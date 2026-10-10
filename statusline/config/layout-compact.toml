@@ -1,0 +1,5 @@
+# cship — COMPACT layout (narrow terminals): widgets only
+[cship]
+lines = [
+  "$cship.model │ $cship.cost │ ctx $cship.context_bar │ $cship.usage_limits"
+]

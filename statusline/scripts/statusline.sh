@@ -13,13 +13,14 @@ THRESHOLD=90   # below this many columns -> hide folder/git
 input=$(cat)
 
 if [ "$WIDTH" -lt "$THRESHOLD" ]; then
-  CFG="$HERE/../config/cship-compact.toml"
+  LAYOUT="$HERE/../config/layout-compact.toml"
 else
-  CFG="$HERE/../config/cship-full.toml"
+  LAYOUT="$HERE/../config/layout-full.toml"
 fi
 
+# One layout file plus the shared module settings, joined into the config cship reads.
 set -o pipefail
-line=$(printf '%s' "$input" | cship --config "$CFG") || exit 1
+line=$(printf '%s' "$input" | cship --config <(cat "$LAYOUT" "$HERE/../config/modules.toml")) || exit 1
 cache=$(printf '%s' "$input" | bash "$HERE/cache-ttl.sh")
 
 if [ -n "$cache" ]; then
