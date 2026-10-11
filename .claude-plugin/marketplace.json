@@ -14,6 +14,11 @@
       "name": "skills",
       "source": "./skills",
       "description": "A /skills:install command that copies picked skills globally or into this repo"
+    },
+    {
+      "name": "statusline",
+      "source": "./statusline",
+      "description": "/statusline:install sets up Diego's cship statusline; /statusline:uninstall removes it"
     }
   ]
 }
