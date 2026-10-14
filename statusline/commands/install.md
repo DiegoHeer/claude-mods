@@ -12,7 +12,7 @@ Install the statusline with the bundled script. The script does all the work; yo
      e.g. "Download to ~/.local/bin: cship latest (have: none), starship 1.26.0 (have: 1.20.0)?",
      with `Download` / `Cancel`.
    Ask all questions in one AskUserQuestion call. If any answer is `Cancel`, say nothing was
-   changed and stop. Otherwise run the script again with `--replace` and/or `--download`,
-   for the choices that were granted.
+   changed and stop. Otherwise run the script again with every flag the stop asked for:
+   `--replace` if there was a `replace` line, `--download` if there was a `download` line.
 3. If it exits with any other non-zero code, show its stderr as is and stop.
 4. If it exits with code 0, show its stdout as a short list.

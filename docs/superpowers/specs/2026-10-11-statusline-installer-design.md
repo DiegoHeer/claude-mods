@@ -95,19 +95,24 @@ Steps, in order:
    for all tools that need a download, saying "install" or "upgrade from X") before
    anything downloads. If the user declines, the install stops and changes nothing:
    no files, no settings.
-   - cship is not pinned. It needs a download only when `~/.local/bin/cship` is
-     missing; any version there is kept. It comes from
+   - cship is not pinned. It needs a download only when no cship is found on
+     `~/.local/bin` + `PATH`; any version found is kept. It comes from
      `https://github.com/stephenleo/cship/releases/latest/download/cship-<target>`,
      with no sha256 check (the latest build has no fixed fingerprint).
    - starship is pinned to v1.26.0 (the version on Diego's machine). It needs a
-     download when `~/.local/bin/starship` is missing or its `--version` is not
-     1.26.0, so a plugin update that bumps the pin upgrades it on the next re-run.
+     download when `~/.local/bin/starship` is missing, broken, or older than 1.26.0,
+     so a plugin update that bumps the pin upgrades it on the next re-run. A newer
+     starship is kept (it may also run the user's shell prompt).
      It comes from the release tarball for `x86_64-unknown-linux-musl` or
      `aarch64-unknown-linux-musl` and is checked with sha256 before it is moved into
      place. Do not pipe `install.sh` to `sh`; the hash must be checked.
    - Other CPU: stop and print the cship and starship project links.
    - A starship download whose hash does not match is deleted, and the script stops.
+   All downloads, folders and the new settings file are staged before anything moves
+   into place, so a failed step leaves no half-done install.
 4. **Files.** Copy the four `files/` to their targets (`mkdir -p` first), overwriting.
+   On the first install (no `~/.claude/statusline-installed` marker), a different
+   existing file is saved as `<file>.statusline-backup` first.
 5. **Settings.** If settings.json will change:
    - copy it to `~/.claude/settings.json.statusline-backup` (overwrite an older one);
    - if a different `statusLine` is being replaced, save it to
@@ -122,10 +127,11 @@ The script must be safe to run any number of times.
 ## /statusline:uninstall
 
 1. Read settings.json. If `statusLine` is not ours, say so and change nothing.
-2. Back up settings.json as in install step 5.
+2. Back up settings.json to `~/.claude/settings.json.statusline-uninstall-backup`, so the
+   install backup (the settings from before install) is kept.
 3. If `~/.claude/statusline-previous.json` exists, put that block back and delete the
    file. Otherwise remove the `statusLine` key.
-4. Delete the four copied files.
+4. Put back each `<file>.statusline-backup`; delete the other copied files and the marker.
 5. Keep cship and starship. Say they stay in `~/.local/bin` and how to remove them.
 6. Say "Start a new session."
 
@@ -159,5 +165,5 @@ No question is asked; running the command is the confirmation.
 - Starship is also pinned (v1.26.0, this machine's version) and hash-checked, instead of
   the `curl | sh` installer.
 - Uninstall restores the statusLine that install replaced, and keeps cship and starship.
-- One backup file, overwritten each time, instead of one per run.
+- One install backup and one uninstall backup, each overwritten by its own command.
 - Missing `jq`/`curl`/`tar`/`sha256sum`/`tac` stops the install with a printed command.

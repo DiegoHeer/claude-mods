@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  BASE_PATH,
   fixtures,
   LEGACY_COMMAND,
   makeHome,
@@ -13,6 +14,7 @@ import {
   readSettings,
   run,
   settingsPath,
+  STUBS,
   TARGETS,
   withTools,
   writeExecutable,
@@ -127,6 +129,24 @@ describe('install', () => {
     expect(readSettings(home).statusLine).toEqual(OURS)
   })
 
+  test("backs up the user's own copy of a line file", () => {
+    const home = makeHome()
+    withTools(home)
+    mkdirSync(join(home, '.config'))
+    writeFileSync(join(home, '.config/cship-full.toml'), 'mine')
+    expect(run(PLUGIN, 'install.sh', home).code).toBe(0)
+    expect(readFileSync(join(home, '.config/cship-full.toml.statusline-backup'), 'utf8')).toBe('mine')
+  })
+
+  test('re-install does not back up its own files', () => {
+    const home = makeHome()
+    withTools(home)
+    run(PLUGIN, 'install.sh', home)
+    writeFileSync(join(home, '.config/cship-full.toml'), 'older plugin version')
+    expect(run(PLUGIN, 'install.sh', home).code).toBe(0)
+    expect(existsSync(join(home, '.config/cship-full.toml.statusline-backup'))).toBe(false)
+  })
+
   test('a statusLine that is not an object stops with a clear message', () => {
     const home = makeHome()
     withTools(home)
@@ -210,6 +230,15 @@ describe('replace', () => {
     expect(readSettings(home).statusLine).toEqual(OURS)
   })
 
+  test('a command with a newline stays on one line', () => {
+    const home = makeHome()
+    withTools(home)
+    writeSettings(home, { statusLine: { type: 'command', command: 'bash a\nb' } })
+    const { code, stdout } = run(PLUGIN, 'install.sh', home)
+    expect(code).toBe(10)
+    expect(stdout.trim().split('\n')).toEqual(['replace bash a b'])
+  })
+
   test('a statusLine removed by hand forgets the saved one', () => {
     const home = withOther()
     run(PLUGIN, 'install.sh', home, ['--replace'])
@@ -279,6 +308,38 @@ describe('downloads', () => {
     expect(asked.stdout.trim().split('\n')).toEqual(['download starship 1.20.0 1.26.0'])
     expect(install(['--download']).code).toBe(0)
     expect(version(join(bin, 'starship'))).toBe('starship 1.26.0')
+  })
+
+  test('a newer starship is kept', () => {
+    const { install, bin } = setup({ tools: { starship: '1.27.0' } })
+    expect(install().code).toBe(0)
+    expect(version(join(bin, 'starship'))).toBe('starship 1.27.0')
+  })
+
+  test('starship junk version output counts as unknown', () => {
+    const { install, bin } = setup({ tools: {} })
+    writeExecutable(join(bin, 'starship'), 'echo "starship garbage"')
+    expect(install().stdout).toContain('download starship unknown 1.26.0')
+  })
+
+  test('a cship elsewhere on PATH is kept', () => {
+    const { home, dl } = setup()
+    const other = makeHome()
+    writeExecutable(join(other, 'cship'), 'echo "cship 1.0.0"')
+    withTools(home)
+    rmSync(join(home, '.local/bin/cship'))
+    const { code, stdout } = run(PLUGIN, 'install.sh', home, [], { FAKE_DL: dl, PATH: `${other}:${STUBS}:${BASE_PATH}` })
+    expect(stdout).not.toContain('download cship')
+    expect(code).toBe(0)
+  })
+
+  test('a later step failing leaves no binary behind', () => {
+    const { home, install } = setup()
+    writeFileSync(join(home, '.config'), 'a file, not a folder')
+    expect(install(['--download']).code).not.toBe(0)
+    expect(existsSync(join(home, '.local/bin/cship'))).toBe(false)
+    expect(existsSync(join(home, '.local/bin/starship'))).toBe(false)
+    expect(existsSync(settingsPath(home))).toBe(false)
   })
 
   test('a broken starship counts as unknown', () => {

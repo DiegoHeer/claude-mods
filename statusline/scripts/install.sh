@@ -4,27 +4,17 @@
 set -euo pipefail
 
 PLUGIN_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-SETTINGS="$HOME/.claude/settings.json"
-BACKUP="$SETTINGS.statusline-backup"
-OURS='{"type":"command","command":"bash \"$HOME/.claude/cship-responsive.sh\"","padding":0,"refreshInterval":30}'
-# Older installs wrote the command unquoted; it still counts as ours.
-LEGACY_COMMAND='bash $HOME/.claude/cship-responsive.sh'
 BIN="$HOME/.local/bin"
+# shellcheck source=common.sh
+. "$PLUGIN_ROOT/scripts/common.sh"
 # shellcheck source=pins.sh
 . "$PLUGIN_ROOT/scripts/pins.sh"
-
-PREVIOUS="$HOME/.claude/statusline-previous.json"
 
 ALLOW_DOWNLOAD=false
 ALLOW_REPLACE=false
 REPLACING=''
 CHOICES=()
 DOWNLOADS=()
-
-die() {
-  echo "$*" >&2
-  exit 1
-}
 
 package_of() {
   case "$1" in
@@ -72,11 +62,10 @@ check_settings() {
 }
 
 check_replace() {
-  jq -e --argjson ours "$OURS" --arg legacy "$LEGACY_COMMAND" \
-    '.statusLine == null or .statusLine.command == $ours.command or .statusLine.command == $legacy' <<<"$CURRENT" >/dev/null && return
+  if jq -e '.statusLine == null' <<<"$CURRENT" >/dev/null || is_ours <<<"$CURRENT"; then return; fi
   REPLACING=$(jq -c '.statusLine' <<<"$CURRENT")
   $ALLOW_REPLACE && return
-  CHOICES+=("replace $(jq -r '.statusLine.command // (.statusLine | tostring)' <<<"$CURRENT")")
+  CHOICES+=("replace $(jq -r '.statusLine.command // (.statusLine | tostring) | gsub("[\r\n]+"; " ")' <<<"$CURRENT")")
 }
 
 starship_version() {
@@ -84,14 +73,19 @@ starship_version() {
   [ -e "$BIN/starship" ] || { echo none; return; }
   output=$("$BIN/starship" --version 2>/dev/null) || { echo unknown; return; }
   read -r _ output _ <<<"$output"
-  echo "${output:-unknown}"
+  [[ $output =~ ^[0-9]+(\.[0-9]+)*$ ]] && echo "$output" || echo unknown
+}
+
+# A newer starship may also run the user's shell prompt, so only an older one is replaced.
+starship_is_recent() {
+  [[ $1 =~ ^[0-9] ]] && [ "$(printf '%s\n' "$STARSHIP_VERSION" "$1" | sort -V | head -n 1)" = "$STARSHIP_VERSION" ]
 }
 
 check_downloads() {
   local have
-  [ -x "$BIN/cship" ] || DOWNLOADS+=("cship none latest")
+  (PATH="$BIN:$PATH" command -v cship >/dev/null) || DOWNLOADS+=("cship none latest")
   have=$(starship_version)
-  [ "$have" = "$STARSHIP_VERSION" ] || DOWNLOADS+=("starship $have $STARSHIP_VERSION")
+  starship_is_recent "$have" || DOWNLOADS+=("starship $have $STARSHIP_VERSION")
   [ ${#DOWNLOADS[@]} -eq 0 ] && return
   ARCH=$(uname -m)
   case "$ARCH" in
@@ -113,12 +107,11 @@ fetch() {
   curl -fsSL -o "$2" "$1" || die "Could not download $1. Nothing was installed."
 }
 
-# Downloads everything into a temp folder first, so a failed or tampered download installs nothing.
-download_tools() {
+# Downloads and checks every tool in a temp folder; nothing lands in ~/.local/bin yet.
+stage_tools() {
   [ ${#DOWNLOADS[@]} -eq 0 ] && return
   local entry tool url sha
   WORK=$(mktemp -d)
-  trap 'rm -rf "$WORK"' EXIT
   for entry in "${DOWNLOADS[@]}"; do
     tool=${entry%% *}
     if [ "$tool" = cship ]; then
@@ -132,32 +125,52 @@ download_tools() {
       tar -xzf "$WORK/starship.tar.gz" -C "$WORK" starship 2>/dev/null ||
         die "Could not unpack the starship download. Nothing was installed."
     fi
+    chmod +x "$WORK/$tool"
   done
-  mkdir -p "$BIN"
+}
+
+# Makes the folders and the new settings file, so the steps after it only move files into place.
+stage_changes() {
+  mkdir -p "$HOME/.claude" "$HOME/.config" "$BIN" 2>/dev/null ||
+    die "Could not create ~/.claude, ~/.config or ~/.local/bin. Nothing was installed."
+  jq -e --argjson ours "$OURS" '.statusLine == $ours' <<<"$CURRENT" >/dev/null && return
+  stage_settings --argjson ours "$OURS" '.statusLine = $ours' <<<"$CURRENT"
+}
+
+install_tools() {
+  local entry tool
   for entry in "${DOWNLOADS[@]}"; do
     tool=${entry%% *}
-    chmod +x "$WORK/$tool"
     mv "$WORK/$tool" "$BIN/$tool"
     echo "Installed $tool ${entry##* } to ~/.local/bin."
   done
 }
 
+same_content() {
+  [ "$(sha256sum <"$1")" = "$(sha256sum <"$2")" ]
+}
+
 copy_files() {
-  mkdir -p "$HOME/.claude" "$HOME/.config"
-  cp "$PLUGIN_ROOT/files/cship-responsive.sh" "$PLUGIN_ROOT/files/cache-ttl.sh" "$HOME/.claude/"
-  cp "$PLUGIN_ROOT/files/cship-full.toml" "$PLUGIN_ROOT/files/cship-compact.toml" "$HOME/.config/"
+  local file source target
+  for file in "${FILES[@]}"; do
+    source="$PLUGIN_ROOT/files/${file##*/}" target="$HOME/$file"
+    if [ ! -e "$MARKER" ] && [ -e "$target" ] && ! same_content "$source" "$target"; then
+      cp "$target" "$target$FILE_BACKUP_SUFFIX"
+      echo "Backed up your ~/$file to ~/$file$FILE_BACKUP_SUFFIX (uninstall puts it back)."
+    fi
+    cp "$source" "$target"
+  done
+  touch "$MARKER"
   echo "Copied the line's files to ~/.claude and ~/.config."
 }
 
 write_settings() {
-  if jq -e --argjson ours "$OURS" '.statusLine == $ours' <<<"$CURRENT" >/dev/null; then
+  if [ -z "$STAGED" ]; then
     echo "settings.json already has the statusLine."
     return
   fi
-  local target tmp
-  target=$(readlink -f "$SETTINGS")
   if [ -e "$SETTINGS" ]; then
-    cp "$SETTINGS" "$BACKUP"
+    cp "$SETTINGS" "$INSTALL_BACKUP"
     echo "Backed up settings.json to ~/.claude/settings.json.statusline-backup."
   fi
   if [ -n "$REPLACING" ]; then
@@ -167,10 +180,7 @@ write_settings() {
     # The statusLine was removed by hand, so a saved one from an older install is stale.
     rm -f "$PREVIOUS"
   fi
-  tmp=$(mktemp "$(dirname "$target")/.settings.json.XXXXXX")
-  [ -e "$target" ] && chmod --reference="$target" "$tmp"
-  jq --argjson ours "$OURS" '.statusLine = $ours' <<<"$CURRENT" >"$tmp"
-  mv "$tmp" "$target"
+  commit_settings
   echo "Wrote the statusLine to settings.json."
 }
 
@@ -192,7 +202,9 @@ main() {
   check_replace
   check_downloads
   ask_choices
-  download_tools
+  stage_tools
+  stage_changes
+  install_tools
   copy_files
   write_settings
   echo "Start a new session to see the line."

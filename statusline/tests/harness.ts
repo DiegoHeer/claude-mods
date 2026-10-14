@@ -1,4 +1,4 @@
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -42,7 +42,7 @@ export function pluginCopy(): string {
   return dir
 }
 
-const STUBS = mkdtempSync(join(tmpdir(), 'statusline-stubs-'))
+export const STUBS = mkdtempSync(join(tmpdir(), 'statusline-stubs-'))
 writeExecutable(join(STUBS, 'uname'), '[ "${1:-}" = -m ] && { echo "$FAKE_ARCH"; exit 0; }\nexec /usr/bin/uname "$@"')
 writeExecutable(
   join(STUBS, 'curl'),
@@ -74,13 +74,19 @@ export function fixtures(plugin: string, versions: { cship?: string; starship?: 
   return dir
 }
 
-type Env ={ PATH?: string; FAKE_ARCH?: string; FAKE_DL?: string; OS_RELEASE?: string }
+// The real PATH minus folders holding a real cship or starship, so tests only see fake ones.
+export const BASE_PATH = process.env
+  .PATH!.split(':')
+  .filter((dir) => !existsSync(join(dir, 'cship')) && !existsSync(join(dir, 'starship')))
+  .join(':')
+
+type Env = { PATH?: string; FAKE_ARCH?: string; FAKE_DL?: string; OS_RELEASE?: string }
 
 export function run(plugin: string, script: 'install.sh' | 'uninstall.sh', home: string, args: string[] = [], env: Env = {}) {
   const result = Bun.spawnSync(['bash', join(plugin, 'scripts', script), ...args], {
     env: {
       HOME: home,
-      PATH: env.PATH ?? `${STUBS}:${process.env.PATH}`,
+      PATH: env.PATH ?? `${STUBS}:${BASE_PATH}`,
       FAKE_ARCH: env.FAKE_ARCH ?? 'x86_64',
       ...(env.FAKE_DL && { FAKE_DL: env.FAKE_DL }),
       ...(env.OS_RELEASE && { OS_RELEASE: env.OS_RELEASE }),
