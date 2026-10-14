@@ -12,6 +12,7 @@ In a Claude Code session:
 /plugin install review-diff@claude-mods
 /plugin install check-docs@claude-mods
 /plugin install skills@claude-mods
+/plugin install statusline@claude-mods
 ```
 
 Update later with `/plugin marketplace update claude-mods`.
@@ -74,6 +75,31 @@ this repo (`.claude/skills/`). If a skill is already there, it asks to overwrite
 Nothing is committed.
 
 To add a skill to the library, put its folder (with `SKILL.md`) in `skills/library/`.
+
+### statusline
+
+Nothing happens until you run `/statusline:install`. It sets up the cship statusline
+(Linux, x86_64 or aarch64):
+
+- copies `cship-responsive.sh` and `cache-ttl.sh` to `~/.claude/`, and
+  `cship-full.toml` and `cship-compact.toml` to `~/.config/`. A different file of your own
+  at one of those paths is first saved as `<file>.statusline-backup`.
+- downloads to `~/.local/bin`, after asking: cship (latest release, only if none is on
+  your PATH) and starship 1.26.0 (sha256-checked, only if missing or older)
+- writes the `statusLine` block to `~/.claude/settings.json`, after backing it up to
+  `~/.claude/settings.json.statusline-backup`. If another statusLine is there, it asks first.
+
+It needs `jq`, `curl`, `tar` and coreutils, and prints the install command if one is missing.
+The line's files live in `statusline/files/`. After changing them and updating the plugin,
+run `/statusline:install` again to copy the new versions.
+
+`/statusline:uninstall` removes the `statusLine` block (or puts back the one it replaced),
+backing up settings.json to `~/.claude/settings.json.statusline-uninstall-backup`. It puts
+back your own saved files and deletes the rest. cship and starship stay in `~/.local/bin`.
+
+```
+bun test statusline
+```
 
 ## Develop
 
