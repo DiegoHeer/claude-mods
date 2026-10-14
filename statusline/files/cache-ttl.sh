@@ -10,7 +10,8 @@ transcript=$(jq -r '.transcript_path // empty')
 recent=$(tac "$transcript" | grep -m 50 '"type":"assistant"')
 [ -n "$recent" ] || exit 0
 
-read -r last_ts ttl < <(printf '%s\n' "$recent" | jq -rs '
+# fromjson? skips a line that is only half written during a refresh.
+read -r last_ts ttl < <(printf '%s\n' "$recent" | jq -R 'fromjson?' | jq -rs '
   (map(select(.message.usage)) ) as $msgs
   | ($msgs[0].timestamp // "") as $ts
   | ($msgs | map(.message.usage.cache_creation // {})

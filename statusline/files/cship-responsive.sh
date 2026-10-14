@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Responsive cship statusline.
-# Wide terminal  -> full layout  (folder + git branch on line 1, widgets on line 2)
+# Wide terminal  -> full layout  (folder + git branch, then widgets, one line)
 # Narrow terminal -> compact layout (widgets only, one line)
 #
 # Claude Code sets COLUMNS to the terminal width before running this script
