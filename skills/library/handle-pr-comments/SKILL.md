@@ -20,7 +20,7 @@ gh auth status
 
 ### 1. Identify the PR
 
-If `$ARGUMENTS` contains `--auto-push`, note it for step 9, and `--review <id>`, note it for step 2. If it contains a PR number, use it. Otherwise auto-detect from the current branch:
+If `$ARGUMENTS` contains `--auto-push`, note it for step 9, and `--review <id>`, note it for step 2. The PR number is the first bare number that is not the value of `--review`; if there is one, use it. Otherwise auto-detect from the current branch:
 
 ```bash
 gh pr view --json number,title,headRefName --jq '{number, title, branch: .headRefName}'
@@ -59,7 +59,7 @@ Filter out:
 With `--review <id>` (a review posted on the user's behalf, e.g. by `/review-pr`):
 - Keep that review's comments (`review_id` equals `<id>`) even though they are authored by the PR author.
 - Also triage each finding in that review's body: they are off-diff findings with no thread. Reply to them in one top-level PR comment (`gh pr comment`) instead of thread replies.
-- Skip root comments whose thread is already resolved (`isResolved` from the step 10 thread query).
+- Skip root comments whose thread is already resolved: run the step 10 thread query now and use its `isResolved`.
 
 ### 3. Read the Current Code
 
@@ -147,12 +147,20 @@ Report any failures and fix them before finishing.
 
 After verification passes, pause for the user's review. Present the changes (files modified, diff summary) and wait for explicit sign-off before proceeding.
 
-With `--auto-push`, skip this pause: the triage approval in step 5 is the sign-off, so commit and push as soon as verification passes. Stage only the files you changed for the fixes (`git add <file>...`), not `git add -A`: nobody looked at the rest of the tree. If verification fails and you cannot fix it, stop and report instead of pushing.
+If no file changed (every comment was dismissed), skip the commit and push and go to step 10.
 
-Once approved, commit and push:
+Without `--auto-push`, once approved, commit and push:
 
 ```bash
 git add -A
+git commit -m "fix: address PR review comments"
+git push
+```
+
+With `--auto-push`, skip the pause: the triage approval in step 5 is the sign-off, so commit and push as soon as verification passes. Stage only the files you changed for the fixes, not `git add -A`: nobody looked at the rest of the tree. If verification fails and you cannot fix it, stop and report instead of pushing.
+
+```bash
+git add <file>...
 git commit -m "fix: address PR review comments"
 git push
 ```
@@ -177,11 +185,12 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies \
 First, fetch the thread ID that contains the comment:
 
 ```bash
-gh api graphql -f query='
-  query($owner: String!, $repo: String!, $number: Int!) {
+gh api graphql --paginate -f query='
+  query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
-        reviewThreads(first: 100) {
+        reviewThreads(first: 100, after: $endCursor) {
+          pageInfo { hasNextPage endCursor }
           nodes {
             id
             isResolved
