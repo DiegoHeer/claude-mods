@@ -42,8 +42,10 @@ the linked issues, and `gh pr diff <n>`.
 Read `deploy-status.md`. Find the environments and the target, decide if the target is
 production, and check that the merge commit is live there.
 
-- Not live, still deploying, or the deploy failed: stop. Say what is missing. The user
-  re-runs later. Make no checks.
+- Still deploying: wait until it is done (up to 30 minutes), then check again. Tell the
+  user you are waiting.
+- Not live, the deploy failed, or still not live after the wait: stop. Say what is
+  missing. The user re-runs later. Make no checks.
 - With `--env`: if the merge is not live on that environment yet, that is "not live",
   even when it is live on another one.
 - Not sure the target is a test environment: treat it as production. The proposal asks.
@@ -127,6 +129,21 @@ Run the approved checks. Clean up test data you made. Then report:
 
 Test data left: <none | what and where>
 ```
+
+With `--deploy`, give each PR its own verdict and checklist, under one overall line:
+
+```
+<VERDICT> — deploy <old-sha7>..<new-sha7> on <env>, <k> PRs
+
+PR #<n> <title> — <VERDICT>
+✅ ...
+
+PR #<m> <title> — <VERDICT>
+❌ ...
+```
+
+The overall verdict is the worst PR verdict: `FAILED` over `PARTLY VERIFIED` over
+`VERIFIED`.
 
 Verdict:
 

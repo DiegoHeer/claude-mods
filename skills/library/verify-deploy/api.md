@@ -48,15 +48,18 @@ Pick one or two neighbors from the diff:
 
 ## Logs
 
-Check for new errors after the checks ran:
+Note the time just before the first check (`date -u +%Y-%m-%dT%H:%M:%SZ`). After the
+checks, read errors since that time only, so older errors do not count as new. Read all
+pods, not one:
 
 ```bash
-kubectl logs deploy/<name> -n <namespace> --since=10m | grep -iE 'error|exception|panic'
-gcloud logging read 'resource.labels.container_name="<name>" AND severity>=ERROR' --freshness=10m
-aws logs tail <log-group> --since 10m --filter-pattern ERROR
+kubectl logs -l <selector> -n <namespace> --all-containers --prefix --tail=-1 --since-time=<start> | grep -iE 'error|exception|panic'
+gcloud logging read 'resource.labels.container_name="<name>" AND severity>=ERROR AND timestamp>="<start>"'
+aws logs tail <log-group> --since <start> --filter-pattern ERROR
 ```
 
-Use the one that matches where the repo deploys.
+Take the label selector from the Deployment (`.spec.selector.matchLabels`). Use the
+command that matches where the repo deploys.
 
 ## Writing data
 
