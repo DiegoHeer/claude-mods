@@ -99,10 +99,10 @@ Facts that make a line valid:
 6. **Post the review** (posts immediately, `event=COMMENT`):
    ```bash
    gh api repos/{OWNER}/{REPO}/pulls/<PR>/reviews --input /tmp/review.json \
-     --jq '{state, url: .html_url}'
+     --jq '{id, state, url: .html_url}'
    ```
 
-7. **Report to the user:** "Posted N inline, M in the summary. Review: <url>".
+7. **Report to the user:** "Posted N inline, M in the summary. Review: <url> (id <id>)".
    If the call still 422s, read the error, fix the offending finding (usually a
    wrong line/side), and re-run step 5–6 — never post a half-review.
 
