@@ -79,6 +79,11 @@ copy the new versions.
 
 To add a skill to the library, put its folder (with `SKILL.md`) in `skills/library/`.
 
+`/review-pr` reviews the current branch's PR with a fresh subagent and posts the findings
+as inline comments. Then it triages all PR comments. After you approve the triage, it fixes,
+commits, pushes and replies. It needs `handle-pr-comments` and `post-review-comments`
+installed too, and offers `/skills:install` when one is missing.
+
 ### statusline
 
 Nothing happens until you run `/statusline:install`. It sets up the cship statusline

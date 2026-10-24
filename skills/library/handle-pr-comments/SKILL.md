@@ -1,7 +1,7 @@
 ---
 name: handle-pr-comments
 description: "Fetch PR review comments, triage them (valid vs noise), plan fixes for valid ones, and implement. Use when a PR has review comments to address, someone says 'handle review comments', 'fix PR feedback', 'address review', or 'triage PR comments'."
-argument-hint: "[PR number]"
+argument-hint: "[PR number] [--auto-push] [--review <id>]"
 user-invocable: true
 ---
 
@@ -20,7 +20,7 @@ gh auth status
 
 ### 1. Identify the PR
 
-If `$ARGUMENTS` contains a PR number, use it. Otherwise auto-detect from the current branch:
+If `$ARGUMENTS` contains `--auto-push`, note it for step 9, and `--review <id>`, note it for step 2. The PR number is the first bare number that is not the value of `--review`; if there is one, use it. Otherwise auto-detect from the current branch:
 
 ```bash
 gh pr view --json number,title,headRefName --jq '{number, title, branch: .headRefName}'
@@ -42,7 +42,7 @@ Fetch all review comments (inline code comments left during reviews):
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments \
   --paginate \
-  --jq '.[] | {id, user: .user.login, path, line: (.line // .original_line), side, body, created_at, in_reply_to_id, diff_hunk}'
+  --jq '.[] | {id, user: .user.login, path, line: (.line // .original_line), side, body, created_at, in_reply_to_id, diff_hunk, review_id: .pull_request_review_id}'
 ```
 
 Also fetch top-level review bodies for additional context:
@@ -55,6 +55,11 @@ gh api repos/{owner}/{repo}/pulls/{number}/reviews \
 Filter out:
 - Comments authored by the PR author (self-comments are notes, not review feedback)
 - Reply comments (`in_reply_to_id` is set) — read them for context but triage only root comments
+
+With `--review <id>` (a review posted on the user's behalf, e.g. by `/review-pr`):
+- Keep that review's comments (`review_id` equals `<id>`) even though they are authored by the PR author.
+- Also triage each finding in that review's body: they are off-diff findings with no thread. Reply to them in one top-level PR comment (`gh pr comment`) instead of thread replies.
+- Skip root comments whose thread is already resolved: run the step 10 thread query now and use its `isResolved`.
 
 ### 3. Read the Current Code
 
@@ -142,10 +147,20 @@ Report any failures and fix them before finishing.
 
 After verification passes, pause for the user's review. Present the changes (files modified, diff summary) and wait for explicit sign-off before proceeding.
 
-Once approved, commit and push:
+If no file changed (every comment was dismissed), skip the commit and push and go to step 10.
+
+Without `--auto-push`, once approved, commit and push:
 
 ```bash
 git add -A
+git commit -m "fix: address PR review comments"
+git push
+```
+
+With `--auto-push`, skip the pause: the triage approval in step 5 is the sign-off, so commit and push as soon as verification passes. Stage only the files you changed for the fixes, not `git add -A`: nobody looked at the rest of the tree. If verification fails and you cannot fix it, stop and report instead of pushing.
+
+```bash
+git add <file>...
 git commit -m "fix: address PR review comments"
 git push
 ```
@@ -170,11 +185,12 @@ gh api repos/{owner}/{repo}/pulls/{number}/comments/{comment_id}/replies \
 First, fetch the thread ID that contains the comment:
 
 ```bash
-gh api graphql -f query='
-  query($owner: String!, $repo: String!, $number: Int!) {
+gh api graphql --paginate -f query='
+  query($owner: String!, $repo: String!, $number: Int!, $endCursor: String) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
-        reviewThreads(first: 100) {
+        reviewThreads(first: 100, after: $endCursor) {
+          pageInfo { hasNextPage endCursor }
           nodes {
             id
             isResolved
