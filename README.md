@@ -74,6 +74,9 @@ Claude asks which skills you want, then where: globally (`~/.claude/skills/`) or
 this repo (`.claude/skills/`). If a skill is already there, it asks to overwrite or skip.
 Nothing is committed.
 
+Installed skills are copies. After updating the plugin, run `/skills:install` again to
+copy the new versions.
+
 To add a skill to the library, put its folder (with `SKILL.md`) in `skills/library/`.
 
 ### statusline
