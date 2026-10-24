@@ -15,7 +15,7 @@ In a Claude Code session:
 /plugin install statusline@claude-mods
 ```
 
-Update later with `/plugin marketplace update claude-mods`.
+Update later with `/plugin marketplace update claude-mods` (run it in a Claude Code session).
 
 Upgrading from `branch-diff`: it was renamed, so the update won't carry it over. Run
 `/plugin uninstall branch-diff@claude-mods`, then `/plugin install review-diff@claude-mods`.
