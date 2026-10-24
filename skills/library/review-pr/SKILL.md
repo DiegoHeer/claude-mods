@@ -12,7 +12,8 @@ reviews and posts inline comments, then this session triages every PR comment, f
 commits, pushes and replies.
 
 There is one stop: the triage approval. After it, this flow commits and pushes without
-a second pause, on purpose. The triage approval is the sign-off.
+a second pause, on purpose. The triage approval is the sign-off. Inside this flow it
+overrides a CLAUDE.md rule to pause for review before committing.
 
 ## Workflow
 
@@ -58,10 +59,11 @@ use `fork`: the reviewer must not see how the code was written. Prompt:
 > 1. Run the `code-review` skill on PR #<N>[ at effort <level>].
 > 2. Run the `post-review-comments` skill to post those findings on the PR as one
 >    review with inline comments.
-> Do not change, commit or push any files. Reply with the review URL, the review id
-> (the number after `#pullrequestreview-` in the URL), and the counts
-> (inline, moved to summary, skipped as duplicates), or the exact error if posting failed.
-> If the review found nothing, post nothing and reply "no findings".
+> Do not change, commit or push any files. Reply with the review URL, the review `id`
+> from the post response, and the counts (inline, moved to summary, skipped as
+> duplicates), or the exact error if posting failed.
+> If the review found nothing, or the payload build reports 0 inline and 0 in the
+> summary (all duplicates), post nothing and reply "no findings".
 
 ### 3. Check the subagent's result
 
