@@ -79,9 +79,11 @@ Facts that make a line valid:
    ```
 
 5. **Build the review payload** with the helper. It splits findings into inline
-   vs off-diff, rolls off-diff ones into the summary, and drops duplicates:
+   vs off-diff, rolls off-diff ones into the summary, and drops duplicates.
+   `<skill-dir>` is this skill's base directory, shown when the skill loads
+   ("Base directory for this skill"); it differs per install (global, repo, plugin):
    ```bash
-   python3 build_review.py \
+   python3 <skill-dir>/build_review.py \
      --diff-file /tmp/pr.diff \
      --findings-file /tmp/findings.json \
      --commit-id <HEAD_SHA> \
@@ -124,4 +126,4 @@ Facts that make a line valid:
 - **Losing off-diff findings.** They go in the summary body, never dropped.
 - **Re-posting on re-run.** Pass `--existing-file` so duplicates are skipped.
 
-See `build_review.py` in this skill directory for the payload builder.
+See `<skill-dir>/build_review.py` for the payload builder.
