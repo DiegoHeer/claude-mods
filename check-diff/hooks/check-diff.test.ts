@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-const PLUGIN = 'review-diff'
+const PLUGIN = 'check-diff'
 const PANE = 'check-diff'
 const PANE_PROPS = { title: 'Check diff', bodyColumns: 80 } as never
 

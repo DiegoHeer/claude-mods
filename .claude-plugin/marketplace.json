@@ -6,8 +6,8 @@
   },
   "plugins": [
     {
-      "name": "review-diff",
-      "source": "./review-diff",
+      "name": "check-diff",
+      "source": "./check-diff",
       "description": "A /check-diff pane with every file changed on this branch vs its base, GitHub-style"
     },
     {

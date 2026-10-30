@@ -1,0 +1,4 @@
+{
+  "description": "check-diff hooks",
+  "modules": ["./register.js"]
+}
