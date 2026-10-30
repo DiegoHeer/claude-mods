@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const PLUGIN = 'review-diff'
-const PANE = 'review-diff'
-const PANE_PROPS = { title: 'Review diff', bodyColumns: 80 } as never
+const PANE = 'check-diff'
+const PANE_PROPS = { title: 'Check diff', bodyColumns: 80 } as never
 
 const DIFF = 'git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames'
 const numstat = (forkPoint: string) => `${DIFF} --numstat ${forkPoint}`
@@ -33,7 +33,7 @@ function fakeGit(on, answers: Record<string, string>, holdUntil?: (key: string) 
 }
 
 async function openPane($, surface: 'terminal' | 'desktop' | 'vscode' = 'terminal') {
-  await $.command.run({ command: 'review-diff', args: '' })
+  await $.command.run({ command: 'check-diff', args: '' })
   return $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 }
 
@@ -79,7 +79,7 @@ const BRANCH = {
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`stacks every changed file as a built-in diff block (${surface})`, async ($, on) => {
     fakeGit(on, BRANCH)
-    await $.command.run({ command: 'review-diff', args: '' })
+    await $.command.run({ command: 'check-diff', args: '' })
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 
     expect(await ui.find({ text: 'vs origin/main · 2 files' })).toBeDefined()

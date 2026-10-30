@@ -24,7 +24,7 @@ Upgrading from `branch-diff`: it was renamed, so the update won't carry it over.
 
 ### review-diff
 
-`/review-diff` opens a pane with every file changed on this branch compared to its base,
+`/check-diff` opens a pane with every file changed on this branch compared to its base,
 committed, uncommitted and untracked work included, drawn like a pull request's
 "Files changed" view.
 
