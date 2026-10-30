@@ -62,6 +62,8 @@ A file counts when Claude, or one of its subagents, wrote or edited a `.md` file
 Write or Edit tool.
 
 - `n` goes to the next tab, `p` to the previous one; press a tab to pick it
+- `o` opens the selected file in VS Code (it runs `code <file>`, so the `code` command must
+  be on your PATH)
 - The pane refreshes on its own after Claude writes, edits or runs commands;
   a new file gets a tab without moving you off the one you are reading
 - Tabs follow the conversation: a resume brings them back, `/clear` starts empty
