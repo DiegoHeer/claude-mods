@@ -9,7 +9,7 @@ const UNTRACKED_MAX_SIZE = '1m' // past this, git calls an untracked file binary
 
 const DIFF = ['-c', 'core.quotePath=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-renames']
 
-const BASE_KEYS = ['review-diff.base', 'branch-diff.base'] // the second is the name from before the rename
+const BASE_KEYS = ['check-diff.base', 'review-diff.base', 'branch-diff.base'] // the last two are names from before the renames
 
 const exists = async (git, ref) => (await git(['rev-parse', '--verify', '--quiet', ref + '^{commit}'])).exitCode === 0
 
@@ -20,7 +20,7 @@ async function configuredBase(git) {
   }
 }
 
-// The branch this one forked from: `git config review-diff.base` if set, else the
+// The branch this one forked from: `git config check-diff.base` if set, else the
 // remote's default, else origin/main, origin/master, main, master. Remote branches
 // come first: a local main is often behind, or is the very branch being worked on.
 async function detectBase(git) {
@@ -33,7 +33,7 @@ async function detectBase(git) {
   for (const name of candidates) {
     if (await exists(git, name)) return { base: name }
   }
-  return { error: 'No base branch found (looked for origin/HEAD, origin/main, origin/master, main, master). Set one with `git config review-diff.base <branch>`.' }
+  return { error: 'No base branch found (looked for origin/HEAD, origin/main, origin/master, main, master). Set one with `git config check-diff.base <branch>`.' }
 }
 
 async function findForkPoint(git, base) {

@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-const PLUGIN = 'review-diff'
-const PANE = 'review-diff'
-const PANE_PROPS = { title: 'Review diff', bodyColumns: 80 } as never
+const PLUGIN = 'check-diff'
+const PANE = 'check-diff'
+const PANE_PROPS = { title: 'Check diff', bodyColumns: 80 } as never
 
 const DIFF = 'git -c core.quotePath=false diff --no-ext-diff --no-textconv --no-renames'
 const numstat = (forkPoint: string) => `${DIFF} --numstat ${forkPoint}`
@@ -33,7 +33,7 @@ function fakeGit(on, answers: Record<string, string>, holdUntil?: (key: string) 
 }
 
 async function openPane($, surface: 'terminal' | 'desktop' | 'vscode' = 'terminal') {
-  await $.command.run({ command: 'review-diff', args: '' })
+  await $.command.run({ command: 'check-diff', args: '' })
   return $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 }
 
@@ -79,7 +79,7 @@ const BRANCH = {
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`stacks every changed file as a built-in diff block (${surface})`, async ($, on) => {
     fakeGit(on, BRANCH)
-    await $.command.run({ command: 'review-diff', args: '' })
+    await $.command.run({ command: 'check-diff', args: '' })
     const ui = await $.ui.mount({ plugin: PLUGIN, surface, component: 'Pane', props: PANE_PROPS, requestId: PANE })
 
     expect(await ui.find({ text: 'vs origin/main · 2 files' })).toBeDefined()
@@ -272,7 +272,7 @@ test('checks a gone origin/HEAD branch only once', async ($, on) => {
 
 test('uses the base set in git config before any other', async ($, on) => {
   fakeGit(on, {
-    'git config --get review-diff.base': 'develop\n',
+    'git config --get check-diff.base': 'develop\n',
     [verify('develop')]: 'dev\n',
     'git symbolic-ref --short refs/remotes/origin/HEAD': 'origin/main\n',
     [verify('origin/main')]: 'abc\n',
@@ -285,23 +285,25 @@ test('uses the base set in git config before any other', async ($, on) => {
 })
 
 test('says when the base set in git config does not exist', async ($, on) => {
-  fakeGit(on, { 'git config --get review-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
+  fakeGit(on, { 'git config --get check-diff.base': 'nope\n', [verify('origin/main')]: 'abc\n' })
   const ui = await openPane($)
 
-  expect(await ui.find({ text: /review-diff.base is set to nope/ })).toBeDefined()
+  expect(await ui.find({ text: /check-diff.base is set to nope/ })).toBeDefined()
 })
 
-test('still reads the base from its name before the rename', async ($, on) => {
-  fakeGit(on, {
-    'git config --get branch-diff.base': 'develop\n',
-    [verify('develop')]: 'dev\n',
-    'git merge-base develop HEAD': 'dev\n',
-    [numstat('dev')]: '',
+for (const oldKey of ['review-diff.base', 'branch-diff.base']) {
+  test(`still reads the base from ${oldKey}, its name before a rename`, async ($, on) => {
+    fakeGit(on, {
+      [`git config --get ${oldKey}`]: 'develop\n',
+      [verify('develop')]: 'dev\n',
+      'git merge-base develop HEAD': 'dev\n',
+      [numstat('dev')]: '',
+    })
+    const ui = await openPane($)
+
+    expect(await ui.find({ text: 'No changes vs develop' })).toBeDefined()
   })
-  const ui = await openPane($)
-
-  expect(await ui.find({ text: 'No changes vs develop' })).toBeDefined()
-})
+}
 
 test('shows untracked files as new, with their whole content', async ($, on) => {
   fakeGit(on, {

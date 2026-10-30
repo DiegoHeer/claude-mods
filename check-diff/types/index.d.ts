@@ -15,6 +15,6 @@ export type Draft = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'review-diff': { drafts: Draft[] }
+    'check-diff': { drafts: Draft[] }
   }
 }

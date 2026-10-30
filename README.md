@@ -9,7 +9,7 @@ In a Claude Code session:
 
 ```
 /plugin marketplace add DiegoHeer/claude-mods
-/plugin install review-diff@claude-mods
+/plugin install check-diff@claude-mods
 /plugin install check-docs@claude-mods
 /plugin install skills@claude-mods
 /plugin install statusline@claude-mods
@@ -17,20 +17,21 @@ In a Claude Code session:
 
 Update later with `/plugin marketplace update claude-mods`.
 
-Upgrading from `branch-diff`: it was renamed, so the update won't carry it over. Run
-`/plugin uninstall branch-diff@claude-mods`, then `/plugin install review-diff@claude-mods`.
+Upgrading from `review-diff` (or the older `branch-diff`): it was renamed, so the update
+won't carry it over. Run `/plugin uninstall review-diff@claude-mods` (or
+`branch-diff@claude-mods`), then `/plugin install check-diff@claude-mods`.
 
 ## Mods
 
-### review-diff
+### check-diff
 
-`/review-diff` opens a pane with every file changed on this branch compared to its base,
+`/check-diff` opens a pane with every file changed on this branch compared to its base,
 committed, uncommitted and untracked work included, drawn like a pull request's
 "Files changed" view.
 
-The base is `git config review-diff.base` if set, else `origin/HEAD`, else the first of
+The base is `git config check-diff.base` if set, else `origin/HEAD`, else the first of
 `origin/main`, `origin/master`, `main`, `master` that exists. To pin it for a repo:
-`git config review-diff.base develop`.
+`git config check-diff.base develop`.
 
 Worktrees: the pane follows the worktree Claude last worked in (the one it entered
 with `EnterWorktree`, or the one holding the last file it edited), else the session's.
@@ -114,9 +115,9 @@ bun test statusline
 ## Develop
 
 ```
-claude plugin validate ./review-diff
-claude plugin test ./review-diff
-claude --plugin-dir ./review-diff
+claude plugin validate ./check-diff
+claude plugin test ./check-diff
+claude --plugin-dir ./check-diff
 
 claude plugin validate ./check-docs
 claude plugin test ./check-docs
