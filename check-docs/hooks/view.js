@@ -17,7 +17,7 @@ function readerText(content, room) {
 
 const readerRoom = (labels, selected) => PANE_TEXT_LIMIT - HINT_ROOM - selected.length - [...labels.values()].join('').length
 
-export function drawPane({ Box, Text, Button, Markdown }, { paths, labels, selected, content, onSelect, onStep }) {
+export function drawPane({ Box, Text, Button, Markdown }, { paths, labels, selected, content, onSelect, onStep, onOpen }) {
   const dim = (text) => Text({ dimColor: true, children: [text] })
   if (paths.length === 0) return dim('No markdown files written in this conversation yet.')
 
@@ -39,7 +39,9 @@ export function drawPane({ Box, Text, Button, Markdown }, { paths, labels, selec
         children: [
           Button({ key: 'next', label: 'next', hotkey: 'n', plain: true, onPress: () => onStep(1) }),
           Button({ key: 'previous', label: 'previous', hotkey: 'p', plain: true, onPress: () => onStep(-1) }),
-        ],
+          content.kind !== 'deleted' &&
+            Button({ key: 'open', label: 'open in VS Code', hotkey: 'o', plain: true, onPress: onOpen }),
+        ].filter(Boolean),
       }),
       dim(selected),
       Markdown({ key: 'reader', text: readerText(content, readerRoom(labels, selected)) }),
