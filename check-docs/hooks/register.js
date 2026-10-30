@@ -67,6 +67,14 @@ async function readContent($, path) {
   }
 }
 
+async function openInVsCode($, path) {
+  try {
+    const { exitCode } = await $.process.run(['code', path], { timeoutMs: 10_000 })
+    if (exitCode === 0) return
+  } catch {}
+  $.ui.toast('Could not open in VS Code')
+}
+
 async function contentOf($, path) {
   if (!contents.has(path)) contents.set(path, await readContent($, path))
   return contents.get(path)
@@ -120,6 +128,7 @@ export function register(on) {
       content: path ? await contentOf($, path) : null,
       onSelect: (picked) => update($, selected, () => picked),
       onStep: (step) => update($, selected, (picked) => stepPath(paths, shownPath(picked), step)),
+      onOpen: () => openInVsCode($, path),
     })
   })
 }

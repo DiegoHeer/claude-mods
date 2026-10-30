@@ -18,15 +18,19 @@ type World = {
   isHidden?: boolean // the pane is open but not shown
   isStoreFull?: boolean // every store write is refused
   onMessages?: () => void // runs as the history is read, to change the world mid-refresh
+  openResult?: number | Error // what running `code` gives: an exit code, or an Error when it cannot start
 }
 
-// Fake engine: the conversation (its id and rows), the files on disk, the store and
-// the open panes, all read on every call so a test can change them between steps.
+// Fake engine: the conversation (its id and rows), the files on disk, the store, the
+// open panes and the commands run, all read on every call so a test can change them
+// between steps.
 function fakeEngine(on, world: World) {
   const panes = new Set<string>()
   const closed: string[] = []
   const opened: string[] = []
   const reads: string[] = []
+  const ran: string[][] = []
+  const toasts: string[] = []
   const store: Record<string, unknown> = {}
   let historyReads = 0
   on('command.register', async () => ({ value: undefined }))
@@ -55,7 +59,14 @@ function fakeEngine(on, world: World) {
   on('ui.panes', async () => ({
     value: [...panes].map((id) => ({ id, title: 'Check docs', isShown: !world.isHidden, isFocused: !world.isHidden, isPlaced: true })),
   }))
-  return { closed, opened, reads, historyReads: () => historyReads }
+  on('process.run', async ($, e) => {
+    ran.push([...e.argv])
+    const result = world.openResult ?? 0
+    if (result instanceof Error) return { deny: result.message }
+    return { value: { exitCode: result, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('ui.toast', async ($, e) => (toasts.push(e.text), { value: undefined }))
+  return { closed, opened, reads, ran, toasts, historyReads: () => historyReads }
 }
 
 async function openPane($, surface: 'terminal' | 'desktop' = 'terminal') {
@@ -120,7 +131,57 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await tabKeys(ui)).toEqual(['tab-/r/gone.md'])
     expect(await readerText(ui)).toBe('This file was deleted.')
   })
+
+  test(`o opens the selected file in VS Code (${surface})`, async ($, on) => {
+    const { ran, toasts } = fakeEngine(on, TWO_FILES())
+    const ui = await openPane($, surface)
+    expect((await ui.find({ key: 'open', text: 'open in VS Code' }))?.props.hotkey).toBe('o')
+    await ui.press({ key: 'open' })
+    expect(ran).toEqual([['code', '/r/b.md']])
+    expect(toasts).toEqual([])
+  })
+
+  test(`no open button for a deleted file (${surface})`, async ($, on) => {
+    fakeEngine(on, { rows: [write('/r/gone.md')], files: {} })
+    const ui = await openPane($, surface)
+    expect(await ui.find({ key: 'open' })).toBeUndefined()
+  })
 }
+
+test('open follows the selected tab', async ($, on) => {
+  const { ran } = fakeEngine(on, TWO_FILES())
+  const ui = await openPane($)
+  await ui.press({ key: 'tab-/r/a.md' })
+  await ui.press({ key: 'open' })
+  expect(ran).toEqual([['code', '/r/a.md']])
+})
+
+test('a path with spaces opens as one argument', async ($, on) => {
+  const { ran } = fakeEngine(on, { rows: [write('/r/my notes.md')], files: { '/r/my notes.md': '# Notes' } })
+  const ui = await openPane($)
+  await ui.press({ key: 'open' })
+  expect(ran).toEqual([['code', '/r/my notes.md']])
+})
+
+test('an unreadable file still has an open button', async ($, on) => {
+  fakeEngine(on, { rows: [write('/r/locked.md')], files: { '/r/locked.md': new Error('no') } })
+  const ui = await openPane($)
+  expect(await ui.find({ key: 'open' })).toBeDefined()
+})
+
+test('a toast when code is missing', async ($, on) => {
+  const { toasts } = fakeEngine(on, { ...TWO_FILES(), openResult: new Error('ENOENT') })
+  const ui = await openPane($)
+  await ui.press({ key: 'open' })
+  expect(toasts).toEqual(['Could not open in VS Code'])
+})
+
+test('a toast when code fails', async ($, on) => {
+  const { toasts } = fakeEngine(on, { ...TWO_FILES(), openResult: 1 })
+  const ui = await openPane($)
+  await ui.press({ key: 'open' })
+  expect(toasts).toEqual(['Could not open in VS Code'])
+})
 
 test('running the command again closes the pane', async ($, on) => {
   const { closed } = fakeEngine(on, TWO_FILES())
