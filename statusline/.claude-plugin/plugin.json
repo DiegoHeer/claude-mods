@@ -1,6 +1,6 @@
 {
   "name": "statusline",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Installs Diego's cship statusline as a statusLine command",
   "author": { "name": "Diego Heer" }
 }
