@@ -1,12 +1,20 @@
 # cship — FULL layout (wide terminals): dir/git + widgets, one line
 [cship]
 lines = [
-  "$directory$git_branch$git_status │ $cship.model │ $cship.cost │ ctx $cship.context_bar │ $cship.usage_limits"
+  "$directory$git_branch$git_status │ $cship.model $cship.effort │ $cship.cost │ ctx $cship.context_bar │ $cship.usage_limits"
 ]
 
 [cship.model]
 symbol = ""
 style  = "bold fg:#7aa2f7"
+
+[cship.effort]
+style        = "fg:#7dcfff"
+low_style    = "fg:#565f89"
+medium_style = "fg:#7dcfff"
+high_style   = "fg:#bb9af7"
+xhigh_style  = "fg:#e0af68"
+max_style    = "bold fg:#f7768e"
 
 [cship.cost]
 symbol             = ""
