@@ -87,13 +87,14 @@ as inline comments. Then it triages all PR comments. After you approve the triag
 commits, pushes and replies. It needs `handle-pr-comments` and `post-review-comments`
 installed too, and offers `/skills:install` when one is missing.
 
-`/autoship` ships the plans while you are away. It finds the plans, checks logins and
-tools, and asks all its questions in one round. Then it sets a goal and works alone: each
+`/autoship` sets up a run that ships the plans while you are away. It works out the
+details from the plans and the chat, asks only what is still open, and writes a run
+folder in `~/.claude/autoship/`. Then it gives you one `/goal` line: send it, and each
 plan goes through a PR, `/review-pr`, green CI and a merge. API and Web work end with
 `/verify-deploy` on staging; App work ends with an APK and a phone checklist. At the
 end it gives you a short checklist of the main and critical items to verify. It needs
-`review-pr`, `verify-deploy`, `handle-pr-comments` and `post-review-comments` installed,
-and auto mode on.
+`review-pr`, `handle-pr-comments` and `post-review-comments` installed (`verify-deploy`
+too for API and Web work), and auto mode on.
 
 ### statusline
 
