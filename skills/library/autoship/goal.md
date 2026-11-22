@@ -14,7 +14,7 @@
 Fill it per run. Drop the API, Web or App line when that part is not in the run.
 
 ```
-Every PR for the plans <plan files> is merged into <base> with green CI, shown in the latest autoship status block.
+Every PR for the plans <plan files> is merged into <base> with green CI (or with no CI, when the user chose that), shown in the latest autoship status block.
 API: verify-deploy reported VERIFIED or PARTLY VERIFIED on <staging env> for all API PRs.
 Web: verify-deploy reported VERIFIED or PARTLY VERIFIED on <staging env> for all Web PRs.
 App: a <debug|release> APK was built at the last merge commit, its path is shown, and a phone checklist is posted.

@@ -26,8 +26,8 @@ and `--max-turns` (default 50). All are optional.
 
 - Plan paths given: use them.
 - None given: take the files in `docs/superpowers/plans/` that still have unticked
-  `- [ ]` steps and no merged `autoship/<plan-name>` PR. The question round confirms
-  them.
+  `- [ ]` steps and are not marked `done` in the progress file (see below). The
+  question round confirms them.
 - No plans found: note it as a preflight failure.
 
 Read each plan. Guess the parts it touches:
@@ -41,6 +41,34 @@ Part flags replace the guess.
 
 The base branch is the repo's default branch:
 `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`.
+
+Branch names follow the repo's own style. Copy it from recent PRs
+(`gh pr list --state merged --limit 10 --json headRefName`). No clear style:
+`<type>/<plan-name>`, with a Conventional Commits type.
+
+### The progress file
+
+The run's state lives in `$(git rev-parse --git-common-dir)/autoship.json`. It is in
+the `.git` folder, so it is never committed, and every worktree of the repo sees it.
+Keep it up to date after every PR step and every end step:
+
+```json
+{
+  "turn": 12,
+  "max_turns": 50,
+  "plans": [
+    {
+      "file": "docs/superpowers/plans/2026-11-20-orders-api.md",
+      "done": false,
+      "prs": [{ "number": 41, "branch": "feat/orders-api", "state": "merged" }]
+    }
+  ],
+  "verify": { "api": "pending", "web": "pending" },
+  "apk": null
+}
+```
+
+A plan is `done` when all its PRs are merged and none are left to make.
 
 ## 2. Preflight
 
@@ -61,14 +89,17 @@ message and stop. Set no goal. The user fixes them and runs `/autoship` again.
    Do not install anything yourself.
 3. **GitHub CLI.** `gh auth status` must pass. Otherwise ask the user to run
    `! gh auth login`.
-4. **CI.** The repo has CI that runs on PRs (`.github/workflows/` with a
+4. **Clean tree.** `git status --porcelain --untracked-files=no` must be empty.
+   Otherwise ask the user to commit or stash first: the first PR would sweep those
+   changes in.
+5. **CI.** The repo has CI that runs on PRs (`.github/workflows/` with a
    `pull_request` trigger). None: it goes into the question round.
-5. **API and Web.** Find the staging environment name and URL in the repo (deploy
+6. **API and Web.** Find the staging environment name and URL in the repo (deploy
    workflows, Helm values, env files). `--env` overrides it. Not found: it goes into the
    question round. Find which CLIs the deploy uses (`kubectl`, `argocd`, `aws`,
    `gcloud`, ...) and test each login with a cheap read-only command. Not logged in:
    ask the user to run the login with `!`.
-6. **App.** Find the Android build command (`./gradlew`, `flutter`, `expo` or `eas`)
+7. **App.** Find the Android build command (`./gradlew`, `flutter`, `expo` or `eas`)
    and check that its tools are on this machine: the command itself, `java`, and the
    Android SDK (`ANDROID_HOME` or `ANDROID_SDK_ROOT`). Missing: give the install
    command. Do not install it.
@@ -78,19 +109,20 @@ permission mode.
 
 ## 3. Ask once
 
-Make one `AskUserQuestion` call, with up to 4 questions. Nothing starts before the
-answers.
+Ask with `AskUserQuestion`, in as few calls as possible: up to 4 questions per call.
+Ask everything before the start. Nothing starts before the answers.
 
 - Always: confirm the parts guess (`multiSelect: true`, one option each for API, App and
   Web, with the plans that made you guess it).
-- No plan paths were given: confirm the plans and their order.
+- No plan paths were given: show the plans and the order you propose, and ask "this
+  order?" with the options yes and change it.
 - API or Web in the run: confirm the staging environment, and that it is a test
   environment.
 - App in the run: debug or release APK.
 - No CI found: merge without CI, or stop.
 - No part matched (for example, a docs-only plan): ask what the end step is and how you
   prove it.
-- Anything else you are not sure of goes in this same call.
+- Anything else you are not sure of.
 
 ## 4. Check the answers
 
@@ -101,24 +133,32 @@ Do not start with an open question.
 
 Fill the condition template from `goal.md`. Show it. Then call `SetGoal` with the
 condition and `ask_user: true`. The user's approval starts the loop. If they decline,
-stop.
+stop. Write the progress file with `turn: 0`.
 
 ## 6. The loop
 
-One PR per plan, unless the plan itself splits the work into PRs. For each PR, in plan
+One PR per plan, unless the plan splits the work into PRs. Follow the PR size rule of
+the repo and the user (CLAUDE.md); with none, aim for about 600 changed lines per PR.
+Split a bigger plan into PRs that each leave the code working. For each PR, in plan
 order:
 
-1. `git fetch`, then create the branch `autoship/<plan-name>` (add `-2`, `-3` for a
-   split plan) from `origin/<base>`.
-2. Implement the plan. Commit, `git push -u`, `gh pr create`.
+1. `git fetch`, then create the branch from `origin/<base>`. Add it to the progress
+   file.
+2. Implement the plan. Make atomic commits that follow the repo's commit rules. Stage
+   only the files the work changed; never commit the plan or spec files. Then
+   `git push -u` and `gh pr create`.
 3. Run `review-pr <N>`. When it shows the triage, approve the recommended triage
    yourself and go on.
 4. Wait for CI with a background command: `gh pr checks <N> --watch`. "No checks
-   reported" right after a push: wait one minute and try once more.
+   reported" right after a push: wait one minute and try once more. Still none, and the
+   user chose to merge without CI: go on.
 5. CI fails on lint, format or a simple type error: fix it, push, wait again. Any other
    failure: follow "When stuck".
-6. Merge: `gh pr merge <N> --merge --delete-branch`.
-7. Print the status block from `goal.md`.
+6. Merge: `gh pr merge <N> --merge`. Then delete the branch with
+   `git push origin --delete <branch>`, and locally with `git branch -D <branch>` after
+   `git checkout --detach origin/<base>`. Do not use `--delete-branch`: it fails in a
+   worktree when the base branch is checked out somewhere else.
+7. Update the progress file. Print the status block from `goal.md`.
 
 ## 7. End steps
 
@@ -137,7 +177,8 @@ Do these once all PRs for that part are merged.
 
   `VERIFIED` and `PARTLY VERIFIED` count as done. `FAILED`, or not live after its wait:
   follow "When stuck".
-- **App**: build the APK at the last merge commit, debug or release as the user chose.
+- **App**: `git fetch`, then `git checkout --detach origin/<base>`, so the build has
+  every merged PR. Build the APK, debug or release as the user chose.
   Post its path. Write a phone checklist: one line per behavior from the App PRs, with
   the steps and the expected result.
 
@@ -162,9 +203,10 @@ tool does not resume the goal; a chat message does.
 
 ## 9. After a summary
 
-If the conversation was summarized, call `GetGoal` and read `goal.md` again. Rebuild the
-status per plan with `gh pr list --state all --head autoship/<plan-name> --json
-number,state`. Go on from the first plan whose PR is not merged.
+If the conversation was summarized, call `GetGoal` and read `goal.md` again. Read the
+progress file: it has the turn count and every plan's PRs. Check each open PR with
+`gh pr view <N> --json state` and fix the file if it is behind. Go on from the first
+plan that is not `done`.
 
 ## 10. Finish
 
@@ -180,5 +222,6 @@ open, and send a `PushNotification` that the turn limit is near.
 - Never run data-changing checks on production.
 - Merge with merge commits only.
 - Print the status block at the end of every turn. The goal checker sees only the chat.
-  A turn is each time you end your reply; count them from the `SetGoal` call.
+  A turn is each time you end your reply; count them from the `SetGoal` call. Before
+  you end a reply, add 1 to `turn` in the progress file.
 - Refer to other skills by name only, never by file path.
