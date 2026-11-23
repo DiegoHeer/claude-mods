@@ -9,7 +9,7 @@ the steps live in `rules.md`, which the line names, so they survive a summary.
 Fill it per run. Drop the parts that are not in the run.
 
 ```
-/goal Follow <run>/rules.md. Done when the autoship final report is posted and shows: every PR for <plan names> merged<, with green CI| (no CI, as agreed)>; <API:> verify-deploy VERIFIED or PARTLY VERIFIED on <staging>; <App:> the <debug|release> APK path and a phone checklist; the user's checklist of main items. No data-changing checks on production; merges use merge commits. Or stop after <max-turns> turns.
+/goal Follow <run>/rules.md. Done when the autoship final report is posted and shows: every PR for <plan names> merged<, with green CI| (no CI, as agreed)>; <API:> verify-deploy VERIFIED or PARTLY VERIFIED on <staging> for the API work; <Web:> verify-deploy VERIFIED or PARTLY VERIFIED on <staging> for the Web work; <App:> the <debug|release> APK path and a phone checklist; the user's checklist of main items. No data-changing checks on production; merges use merge commits. Or stop after <max-turns> turns.
 ```
 
 For a plan with another end step (agreed in the questions), name that end step and its

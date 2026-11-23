@@ -13,9 +13,7 @@ runs from `loop.md` until the work is merged and verified.
 Start with this one line to the user: "I work out the details, ask only what I can't
 find, then give you one `/goal` line. Send it, and you can leave."
 
-Shell rules for every command in this skill and in `loop.md`: one plain command per
-call, absolute paths, no `cd`, no `$(...)`, no heredocs. Use `git -C <repo>` for a repo
-that is not the current directory. Write files with the Write tool, not the shell.
+Follow the "Shell rules" in `loop.md` (this folder) for every command, here too.
 
 ## 1. Work out the details
 
@@ -30,14 +28,17 @@ repo. Only what is still open after that goes to step 3.
   `api`, `app`, `web` replace the guess.
 - **Repos.** The repo each plan changes, as an absolute path. A plan can name another
   repo, and so can the chat. Each repo gets its own base branch and branch style.
+- **GitHub name** per repo (`owner/name`): `git -C <repo> remote get-url origin`.
 - **Base branch** per repo:
-  `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`, run in that repo.
+  `gh repo view <owner/name> --json defaultBranchRef --jq .defaultBranchRef.name`.
 - **Branch style** per repo: copy it from
-  `gh pr list --state merged --limit 10 --json headRefName`. No clear style:
-  `<type>/<plan-name>`.
+  `gh pr list -R <owner/name> --state merged --limit 10 --json headRefName`. No clear
+  style: `<type>/<plan-name>`.
 - **Staging** for API and Web: `--env`, the chat, the plans, then the repo's deploy
-  workflows, Helm values and env files. A name with `stg`, `staging`, `test`, `tst` or
-  `dev` is a test environment. Anything else is unclear: ask.
+  workflows, Helm values and env files.
+- **Test environment:** staging counts as one when the chat or the plans say so, or when
+  its whole name is `staging`, `stg`, `test`, `tst`, `dev` or `acc`. Anything else: ask.
+  This decides whether data-changing checks run without asking.
 - **APK type** for App: the chat or the plans. Not found: ask.
 - **Turn limit:** `--max-turns`, else 50.
 
@@ -74,6 +75,12 @@ question, marked "(Recommended)".
 Get the home path once with `echo $HOME`. The run folder is
 `<home>/.claude/autoship/<YYYY-MM-DD>-<topic>/`. It sits outside every repo, so a
 worktree session can write to it and no file in it gets committed.
+
+Never overwrite a run folder. If the folder exists, read its `progress.json`:
+
+- Same plans, not all `done`: this is a resume. Keep the folder, skip the writes below,
+  and hand over its goal line again.
+- Otherwise: add `-2` (or `-3`, ...) to the folder name.
 
 1. Copy each plan file into `<run>/plans/` with the Write tool. Plans on a local branch
    vanish once the loop branches from `origin/<base>`; the copies stay.
